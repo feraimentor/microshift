@@ -42,19 +42,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [isMockMode, setIsMockMode] = useState<boolean>(!hasFirebaseConfig);
 
   useEffect(() => {
+    // 1. Caso o Firebase não tenha sido inicializado com credenciais válidas
     if (!hasFirebaseConfig) {
-      const savedType = localStorage.getItem(LOCAL_ACTIVE_USER_KEY) || "SUPER_ADMIN";
-      if (savedType === "START") {
+      const savedType = localStorage.getItem(LOCAL_ACTIVE_USER_KEY);
+      // NUNCA assume SUPER_ADMIN por padrão! Se não houver login explícito, visitante é null (deslogado)
+      if (savedType === "SUPER_ADMIN") {
+        setProfile(MOCK_SUPER_ADMIN);
+      } else if (savedType === "START" || savedType === "STANDARD") {
         setProfile(MOCK_START_USER);
       } else if (savedType === "SOVER") {
         setProfile(MOCK_SOVER_USER);
       } else {
-        setProfile(MOCK_SUPER_ADMIN);
+        setProfile(null);
       }
       setLoading(false);
       return;
     }
 
+    // 2. Quando o Firebase Auth está ativo
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
       setLoading(true);
       if (firebaseUser) {
@@ -64,18 +69,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           setProfile(userProf);
           setIsMockMode(false);
         } catch (err) {
-          console.error("Erro ao sincronizar perfil do usuário:", err);
-          // Fallback para mock admin
-          setProfile(MOCK_SUPER_ADMIN);
+          console.error("Erro ao sincronizar perfil com o Firebase:", err);
+          setProfile(null);
           setIsMockMode(true);
         }
       } else {
+        // Usuário deslogado no Firebase
         setUser(null);
-        // No modo demo/deslogado, preserva acesso de testes
-        const savedType = localStorage.getItem(LOCAL_ACTIVE_USER_KEY) || "SUPER_ADMIN";
-        if (savedType === "START") setProfile(MOCK_START_USER);
-        else if (savedType === "SOVER") setProfile(MOCK_SOVER_USER);
-        else setProfile(MOCK_SUPER_ADMIN);
+        // Verifica se há login de demonstração local ativado explicitamente
+        const savedType = localStorage.getItem(LOCAL_ACTIVE_USER_KEY);
+        if (savedType === "SUPER_ADMIN") {
+          setProfile(MOCK_SUPER_ADMIN);
+        } else if (savedType === "START" || savedType === "STANDARD") {
+          setProfile(MOCK_START_USER);
+        } else if (savedType === "SOVER") {
+          setProfile(MOCK_SOVER_USER);
+        } else {
+          setProfile(null);
+        }
       }
       setLoading(false);
     });
@@ -121,8 +132,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     try {
       await logoutUser();
       setUser(null);
-      setProfile(MOCK_START_USER);
-      localStorage.setItem(LOCAL_ACTIVE_USER_KEY, "START");
+      setProfile(null);
+      localStorage.removeItem(LOCAL_ACTIVE_USER_KEY);
     } finally {
       setLoading(false);
     }

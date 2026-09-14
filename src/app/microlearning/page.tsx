@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import { Card, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -13,7 +14,14 @@ import {
 } from "@/lib/microlearning";
 
 export default function MicrolearningPage() {
-  const { profile } = useAuth();
+  const router = useRouter();
+  const { profile, loading: authLoading } = useAuth();
+
+  useEffect(() => {
+    if (!authLoading && !profile) {
+      router.push("/login");
+    }
+  }, [authLoading, profile, router]);
   const [lessons, setLessons] = useState<MicrolearningLesson[]>([]);
   const [selectedLesson, setSelectedLesson] = useState<MicrolearningLesson | null>(null);
   const [completedLessons, setCompletedLessons] = useState<string[]>([]);
@@ -64,6 +72,19 @@ export default function MicrolearningPage() {
   const totalCompleted = completedLessons.length;
   const progressPercent =
     lessons.length > 0 ? Math.round((totalCompleted / lessons.length) * 100) : 0;
+
+  if (authLoading) {
+    return (
+      <div className="flex-1 flex flex-col items-center justify-center p-12 text-center">
+        <BookOpen className="w-10 h-10 text-sky-400 mb-4 animate-bounce" />
+        <p className="text-sm text-slate-400">Carregando aulas blindadas...</p>
+      </div>
+    );
+  }
+
+  if (!profile) {
+    return null;
+  }
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10 w-full space-y-8">

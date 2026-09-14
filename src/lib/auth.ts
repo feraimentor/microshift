@@ -11,7 +11,7 @@ import {
 import { doc, getDoc, setDoc, updateDoc } from "firebase/firestore";
 import { auth, db, hasFirebaseConfig } from "./firebase";
 import { UserProfile } from "@/types";
-import { MOCK_SUPER_ADMIN } from "./mock-data";
+import { MOCK_SUPER_ADMIN, MOCK_START_USER } from "./mock-data";
 
 export const SUPER_ADMIN_EMAIL = "feraimentor@gmail.com";
 
@@ -65,7 +65,7 @@ export async function syncUserProfile(firebaseUser: User): Promise<UserProfile> 
 
 export async function loginWithGoogle(): Promise<UserProfile> {
   if (!hasFirebaseConfig) {
-    return MOCK_SUPER_ADMIN;
+    return MOCK_START_USER;
   }
   const provider = new GoogleAuthProvider();
   const result = await signInWithPopup(auth, provider);
@@ -74,19 +74,41 @@ export async function loginWithGoogle(): Promise<UserProfile> {
 
 export async function loginWithEmail(email: string, pass: string): Promise<UserProfile> {
   if (!hasFirebaseConfig) {
-    return MOCK_SUPER_ADMIN;
+    if (isSuperAdminEmail(email)) {
+      return MOCK_SUPER_ADMIN;
+    }
+    return {
+      ...MOCK_START_USER,
+      email,
+      displayName: email.split("@")[0] || "Usuário MicroShift",
+    };
   }
   const result = await signInWithEmailAndPassword(auth, email, pass);
   return syncUserProfile(result.user);
 }
 
 export async function registerWithEmail(email: string, pass: string, name: string): Promise<UserProfile> {
+  const isSuperAdmin = isSuperAdminEmail(email);
+
   if (!hasFirebaseConfig) {
-    return MOCK_SUPER_ADMIN;
+    if (isSuperAdmin) {
+      return MOCK_SUPER_ADMIN;
+    }
+    return {
+      uid: "mock-" + Date.now(),
+      email,
+      displayName: name || email.split("@")[0] || "Usuário MicroShift",
+      role: "USER",
+      plan: "START",
+      status: "ACTIVE",
+      streak: 0,
+      completedLessons: [],
+      createdAt: new Date().toISOString(),
+      lastActiveDate: new Date().toISOString(),
+    };
   }
   const result = await createUserWithEmailAndPassword(auth, email, pass);
   const userRef = doc(db, "users", result.user.uid);
-  const isSuperAdmin = email.toLowerCase() === SUPER_ADMIN_EMAIL.toLowerCase();
 
   const newProfile: UserProfile = {
     uid: result.user.uid,

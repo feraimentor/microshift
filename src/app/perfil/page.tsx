@@ -1,6 +1,7 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import { Card, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -18,7 +19,14 @@ import {
 } from "lucide-react";
 
 export default function PerfilPage() {
-  const { profile, linkEmailPassword, redeemCoupon, isMockMode, refreshProfile } = useAuth();
+  const router = useRouter();
+  const { profile, loading, linkEmailPassword, redeemCoupon, isMockMode, refreshProfile } = useAuth();
+
+  useEffect(() => {
+    if (!loading && !profile) {
+      router.push("/login");
+    }
+  }, [loading, profile, router]);
 
   // Estados do formulário de criação de senha
   const [newPassword, setNewPassword] = useState("");
@@ -33,12 +41,17 @@ export default function PerfilPage() {
   const [couponSuccess, setCouponSuccess] = useState<string | null>(null);
   const [couponError, setCouponError] = useState<string | null>(null);
 
-  if (!profile) {
+  if (loading) {
     return (
-      <div className="flex-1 flex items-center justify-center p-6">
-        <p className="text-calm-muted text-sm">Carregando dados do perfil...</p>
+      <div className="flex-1 flex flex-col items-center justify-center p-12 text-center">
+        <User className="w-10 h-10 text-sky-400 mb-4 animate-pulse" />
+        <p className="text-sm text-slate-400">Carregando dados do perfil...</p>
       </div>
     );
+  }
+
+  if (!profile) {
+    return null;
   }
 
   const handleLinkPassword = async (e: React.FormEvent) => {

@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import { Card, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -9,7 +10,14 @@ import { CommunityPost, PostCategory } from "@/types";
 import { fetchCommunityPosts, createCommunityPost, reactToCommunityPost } from "@/lib/community";
 
 export default function TriboPage() {
-  const { profile } = useAuth();
+  const router = useRouter();
+  const { profile, loading: authLoading } = useAuth();
+
+  useEffect(() => {
+    if (!authLoading && !profile) {
+      router.push("/login");
+    }
+  }, [authLoading, profile, router]);
   const [activeTab, setActiveTab] = useState<"TODOS" | "VITORIA" | "PEDIDO_AJUDA">("TODOS");
   const [posts, setPosts] = useState<CommunityPost[]>([]);
   const [loadingPosts, setLoadingPosts] = useState(true);
@@ -84,6 +92,19 @@ export default function TriboPage() {
       console.error("Erro ao registrar reação:", err);
     }
   };
+
+  if (authLoading) {
+    return (
+      <div className="flex-1 flex flex-col items-center justify-center p-12 text-center">
+        <Users className="w-10 h-10 text-sky-400 mb-4 animate-pulse" />
+        <p className="text-sm text-slate-400">Carregando a Tribo Silenciosa...</p>
+      </div>
+    );
+  }
+
+  if (!profile) {
+    return null;
+  }
 
   return (
     <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-10 w-full space-y-8">

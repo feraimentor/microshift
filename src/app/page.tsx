@@ -1,5 +1,8 @@
+"use client";
+
 import React from "react";
 import Link from "next/link";
+import { useAuth } from "@/context/AuthContext";
 import { Button } from "@/components/ui/button";
 import { Card, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -17,6 +20,8 @@ import {
 } from "lucide-react";
 
 export default function HomePage() {
+  const { profile } = useAuth();
+
   return (
     <div className="flex-1 flex flex-col">
       {/* Hero Section */}
@@ -43,16 +48,33 @@ export default function HomePage() {
           </p>
 
           <div className="mt-10 flex flex-wrap items-center justify-center gap-4">
-            <Link href="/dashboard">
-              <Button size="lg" className="bg-sky-600 hover:bg-sky-500 text-white font-semibold text-base px-8 h-12 shadow-lg shadow-sky-600/25">
-                Acessar Plataforma <ArrowRight className="w-5 h-5 ml-2" />
-              </Button>
-            </Link>
-            <Link href="/login">
-              <Button size="lg" variant="outline" className="border-slate-700 text-slate-200 hover:bg-slate-800 text-base px-8 h-12">
-                Criar Conta Gratuita
-              </Button>
-            </Link>
+            {profile ? (
+              <>
+                <Link href="/dashboard">
+                  <Button size="lg" className="bg-sky-600 hover:bg-sky-500 text-white font-semibold text-base px-8 h-12 shadow-lg shadow-sky-600/25">
+                    Ir para meu Dashboard <ArrowRight className="w-5 h-5 ml-2" />
+                  </Button>
+                </Link>
+                <Link href="/mentor">
+                  <Button size="lg" variant="outline" className="border-slate-700 text-slate-200 hover:bg-slate-800 text-base px-8 h-12">
+                    Acessar Mentor Sover
+                  </Button>
+                </Link>
+              </>
+            ) : (
+              <>
+                <Link href="/login?mode=signup">
+                  <Button size="lg" className="bg-sky-600 hover:bg-sky-500 text-white font-semibold text-base px-8 h-12 shadow-lg shadow-sky-600/25">
+                    Criar Conta Gratuita <ArrowRight className="w-5 h-5 ml-2" />
+                  </Button>
+                </Link>
+                <Link href="/login">
+                  <Button size="lg" variant="outline" className="border-slate-700 text-slate-200 hover:bg-slate-800 text-base px-8 h-12">
+                    Fazer Login
+                  </Button>
+                </Link>
+              </>
+            )}
           </div>
 
           <div className="mt-12 flex items-center justify-center gap-8 text-xs text-slate-400">
@@ -70,7 +92,7 @@ export default function HomePage() {
       </section>
 
       {/* Os 4 Pilares */}
-      <section className="py-20 bg-slate-950">
+      <section id="pilares" className="py-20 bg-slate-950 scroll-mt-16">
         <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="text-center mb-16">
             <h2 className="text-2xl sm:text-3xl font-bold text-slate-100">
@@ -126,7 +148,7 @@ export default function HomePage() {
       </section>
 
       {/* Tabela de Planos */}
-      <section className="py-20 bg-slate-900/40 border-t border-slate-800">
+      <section id="planos" className="py-20 bg-slate-900/40 border-t border-slate-800 scroll-mt-16">
         <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="text-center mb-16">
             <Badge variant="outline" className="mb-2 bg-slate-800 text-slate-300 border-slate-700 text-xs">
@@ -160,9 +182,9 @@ export default function HomePage() {
                   </li>
                 </ul>
               </div>
-              <Link href="/login" className="mt-8">
+              <Link href={profile ? "/dashboard" : "/login?mode=signup"} className="mt-8">
                 <Button variant="outline" className="w-full border-slate-700 text-slate-200">
-                  Começar Grátis
+                  {profile ? "Acessar Dashboard" : "Começar Grátis"}
                 </Button>
               </Link>
             </Card>
@@ -194,9 +216,9 @@ export default function HomePage() {
                   </li>
                 </ul>
               </div>
-              <Link href="/login" className="mt-8">
+              <Link href={profile ? "/perfil" : "/login?mode=signup"} className="mt-8">
                 <Button className="w-full bg-sky-600 hover:bg-sky-500 text-white font-semibold">
-                  Aderir ao Track
+                  {profile ? "Ver Meu Plano" : "Aderir ao Track"}
                 </Button>
               </Link>
             </Card>
@@ -223,9 +245,9 @@ export default function HomePage() {
                   </li>
                 </ul>
               </div>
-              <Link href="/login" className="mt-8">
+              <Link href={profile ? "/perfil" : "/login?mode=signup"} className="mt-8">
                 <Button className="w-full bg-violet-600 hover:bg-violet-500 text-white font-semibold">
-                  Aderir ao Sover
+                  {profile ? "Ver Meu Plano" : "Aderir ao Sover"}
                 </Button>
               </Link>
             </Card>

@@ -2,6 +2,7 @@
 
 import React, { useState, useRef, useEffect } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import { Card, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -33,7 +34,14 @@ const QUICK_PROMPTS = [
 ];
 
 export default function MentorPage() {
-  const { profile } = useAuth();
+  const router = useRouter();
+  const { profile, loading: authLoading } = useAuth();
+
+  useEffect(() => {
+    if (!authLoading && !profile) {
+      router.push("/login");
+    }
+  }, [authLoading, profile, router]);
   const [messages, setMessages] = useState<ChatMessage[]>([
     {
       id: "welcome",
@@ -107,6 +115,19 @@ Em que desafio ou decisão estratégica de carreira você gostaria de focar hoje
       setLoading(false);
     }
   };
+
+  if (authLoading) {
+    return (
+      <div className="flex-1 flex flex-col items-center justify-center p-12 text-center">
+        <Brain className="w-10 h-10 text-sky-400 mb-4 animate-pulse" />
+        <p className="text-sm text-slate-400">Conectando ao Mentor Sover...</p>
+      </div>
+    );
+  }
+
+  if (!profile) {
+    return null;
+  }
 
   // Se o usuário não tiver o plano Sover, exibe tela de upgrade amigável
   if (!isSoverPlan) {

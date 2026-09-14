@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import { Card, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -31,7 +32,14 @@ import { HabitGoal } from "@/types";
 import { fetchUserGoals, createUserGoal, completeGoalToday, deleteUserGoal } from "@/lib/goals";
 
 export default function DashboardPage() {
-  const { profile, refreshProfile } = useAuth();
+  const router = useRouter();
+  const { profile, loading, refreshProfile } = useAuth();
+
+  useEffect(() => {
+    if (!loading && !profile) {
+      router.push("/login");
+    }
+  }, [loading, profile, router]);
 
   // Estados de Metas
   const [goals, setGoals] = useState<HabitGoal[]>([]);
@@ -150,19 +158,17 @@ export default function DashboardPage() {
     await loadGoals();
   };
 
-  if (!profile) {
+  if (loading) {
     return (
-      <div className="flex-1 flex flex-col items-center justify-center p-6 text-center">
-        <Compass className="w-12 h-12 text-calm-accent mb-4 animate-spin" />
-        <h2 className="text-xl font-bold text-calm-text">Sua sessão expirou ou não está autenticada</h2>
-        <p className="text-sm text-calm-muted mt-2 mb-6">
-          Por favor, faça login para acessar seu plano e suas micro-metas diárias.
-        </p>
-        <Link href="/login">
-          <Button variant="primary">Fazer Login</Button>
-        </Link>
+      <div className="flex-1 flex flex-col items-center justify-center p-12 text-center">
+        <Compass className="w-10 h-10 text-sky-400 mb-4 animate-spin" />
+        <p className="text-sm text-slate-400">Carregando seu espaço executivo...</p>
       </div>
     );
+  }
+
+  if (!profile) {
+    return null;
   }
 
   const isSuperAdmin = profile.role === "SUPER_ADMIN";

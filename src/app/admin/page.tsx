@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import { Card, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -46,7 +47,14 @@ import {
 } from "@/lib/microlearning";
 
 export default function AdminPage() {
-  const { profile } = useAuth();
+  const router = useRouter();
+  const { profile, loading: authLoading } = useAuth();
+
+  useEffect(() => {
+    if (!authLoading && (!profile || profile.role !== "SUPER_ADMIN")) {
+      router.push("/login");
+    }
+  }, [authLoading, profile, router]);
 
   // Estados de Abas
   const [activeTab, setActiveTab] = useState<"COUPONS" | "USERS" | "LESSONS">("COUPONS");
@@ -219,6 +227,19 @@ export default function AdminPage() {
   const availableCoupons = coupons.filter((c) => !c.isRedeemed).length;
   const redeemedCoupons = coupons.filter((c) => c.isRedeemed).length;
   const vipUsers = users.filter((u) => u.planStatus === "ACTIVE_VIP").length;
+
+  if (authLoading) {
+    return (
+      <div className="flex-1 flex flex-col items-center justify-center p-12 text-center">
+        <ShieldCheck className="w-10 h-10 text-amber-400 mb-4 animate-pulse" />
+        <p className="text-sm text-slate-400">Verificando credenciais de Super Admin...</p>
+      </div>
+    );
+  }
+
+  if (!profile || profile.role !== "SUPER_ADMIN") {
+    return null;
+  }
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10 w-full space-y-8">
