@@ -2,7 +2,7 @@
 
 import React, { createContext, useContext, useEffect, useState } from "react";
 import { User, onAuthStateChanged } from "firebase/auth";
-import { auth, hasFirebaseConfig } from "@/lib/firebase";
+import { auth } from "@/lib/firebase";
 import {
   loginWithGoogle,
   loginWithEmail,
@@ -10,56 +10,32 @@ import {
   logoutUser,
   linkEmailPasswordCredential,
   syncUserProfile,
-  SUPER_ADMIN_EMAIL,
 } from "@/lib/auth";
 import { redeemCouponTransaction } from "@/lib/coupons";
 import { UserProfile, SubscriptionPlan, PlanStatus } from "@/types";
-import { MOCK_SUPER_ADMIN, MOCK_START_USER, MOCK_SOVER_USER } from "@/lib/mock-data";
 
 interface AuthContextType {
   user: User | null;
   profile: UserProfile | null;
   loading: boolean;
-  isMockMode: boolean;
   signInWithGoogle: () => Promise<void>;
   signInWithEmail: (email: string, pass: string) => Promise<void>;
   signUpWithEmail: (email: string, pass: string, name: string) => Promise<void>;
   logout: () => Promise<void>;
   linkEmailPassword: (password: string) => Promise<void>;
   redeemCoupon: (code: string) => Promise<{ success: boolean; plan: SubscriptionPlan; status: PlanStatus; message: string }>;
-  switchDemoUser: (target: "SUPER_ADMIN" | "STANDARD" | "START" | "SOVER") => void;
   refreshProfile: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-const LOCAL_ACTIVE_USER_KEY = "microshift_active_demo_user";
-
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
-  const [isMockMode, setIsMockMode] = useState<boolean>(!hasFirebaseConfig);
 
   useEffect(() => {
-    // 1. Caso o Firebase não tenha sido inicializado com credenciais válidas
-    if (!hasFirebaseConfig) {
-      const savedType = localStorage.getItem(LOCAL_ACTIVE_USER_KEY);
-      // NUNCA assume SUPER_ADMIN por padrão! Se não houver login explícito, visitante é null (deslogado)
-      if (savedType === "SUPER_ADMIN") {
-        setProfile(MOCK_SUPER_ADMIN);
-      } else if (savedType === "START" || savedType === "STANDARD") {
-        setProfile(MOCK_START_USER);
-      } else if (savedType === "SOVER") {
-        setProfile(MOCK_SOVER_USER);
-      } else {
-        setProfile(null);
-      }
-      setLoading(false);
-      return;
-    }
-
-    // 2. Quando o Firebase Auth está ativo
+    // Monitoramento reativo e oficial de sessão do Firebase Auth
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
       setLoading(true);
       if (firebaseUser) {
@@ -67,26 +43,27 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         try {
           const userProf = await syncUserProfile(firebaseUser);
           setProfile(userProf);
-          setIsMockMode(false);
         } catch (err) {
-          console.error("Erro ao sincronizar perfil com o Firebase:", err);
-          setProfile(null);
-          setIsMockMode(true);
+          console.error("Erro ao sincronizar perfil do usuário:", err);
+          // Mesmo com falha de rede/firestore, monta com os dados reais do Google
+          setProfile({
+            uid: firebaseUser.uid,
+            email: firebaseUser.email || "",
+            displayName: firebaseUser.displayName || "Usuário",
+            photoURL: firebaseUser.photoURL || undefined,
+            role: firebaseUser.email?.toLowerCase() === "feraimentor@gmail.com" ? "SUPER_ADMIN" : "USER",
+            plan: firebaseUser.email?.toLowerCase() === "feraimentor@gmail.com" ? "SOVER" : "START",
+            status: firebaseUser.email?.toLowerCase() === "feraimentor@gmail.com" ? "ACTIVE_VIP" : "ACTIVE",
+            streak: 0,
+            completedLessons: [],
+            createdAt: new Date().toISOString(),
+            lastActiveDate: new Date().toISOString(),
+          });
         }
       } else {
-        // Usuário deslogado no Firebase
+        // Deslogado
         setUser(null);
-        // Verifica se há login de demonstração local ativado explicitamente
-        const savedType = localStorage.getItem(LOCAL_ACTIVE_USER_KEY);
-        if (savedType === "SUPER_ADMIN") {
-          setProfile(MOCK_SUPER_ADMIN);
-        } else if (savedType === "START" || savedType === "STANDARD") {
-          setProfile(MOCK_START_USER);
-        } else if (savedType === "SOVER") {
-          setProfile(MOCK_SOVER_USER);
-        } else {
-          setProfile(null);
-        }
+        setProfile(null);
       }
       setLoading(false);
     });
@@ -99,7 +76,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     try {
       const prof = await loginWithGoogle();
       setProfile(prof);
-      setIsMockMode(!hasFirebaseConfig);
     } finally {
       setLoading(false);
     }
@@ -110,7 +86,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     try {
       const prof = await loginWithEmail(email, pass);
       setProfile(prof);
-      setIsMockMode(!hasFirebaseConfig);
     } finally {
       setLoading(false);
     }
@@ -121,7 +96,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     try {
       const prof = await registerWithEmail(email, pass, name);
       setProfile(prof);
-      setIsMockMode(!hasFirebaseConfig);
     } finally {
       setLoading(false);
     }
@@ -133,7 +107,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       await logoutUser();
       setUser(null);
       setProfile(null);
-      localStorage.removeItem(LOCAL_ACTIVE_USER_KEY);
     } finally {
       setLoading(false);
     }
@@ -152,19 +125,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return result;
   };
 
-  const switchDemoUser = (target: "SUPER_ADMIN" | "STANDARD" | "START" | "SOVER") => {
-    localStorage.setItem(LOCAL_ACTIVE_USER_KEY, target);
-    if (target === "SUPER_ADMIN") {
-      setProfile(MOCK_SUPER_ADMIN);
-    } else if (target === "START" || target === "STANDARD") {
-      setProfile(MOCK_START_USER);
-    } else {
-      setProfile(MOCK_SOVER_USER);
-    }
-  };
-
   const refreshProfile = async () => {
-    if (user && hasFirebaseConfig) {
+    if (user) {
       const prof = await syncUserProfile(user);
       setProfile(prof);
     }
@@ -176,14 +138,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         user,
         profile,
         loading,
-        isMockMode,
         signInWithGoogle,
         signInWithEmail,
         signUpWithEmail,
         logout,
         linkEmailPassword,
         redeemCoupon,
-        switchDemoUser,
         refreshProfile,
       }}
     >

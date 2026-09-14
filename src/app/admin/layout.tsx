@@ -8,7 +8,7 @@ import { Lock, ShieldAlert, ArrowLeft, Compass } from "lucide-react";
 import { isSuperAdminEmail } from "@/lib/auth";
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
-  const { profile, loading, isMockMode, switchDemoUser } = useAuth();
+  const { profile, loading } = useAuth();
 
   if (loading) {
     return (
@@ -44,27 +44,6 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
               Sua conta atual não possui privilégios de Super Admin.
             </p>
           </div>
-
-          {/* Atalho caso esteja em Modo Demonstração */}
-          {isMockMode && (
-            <div className="p-3.5 rounded-xl border border-amber-500/20 bg-amber-500/5 text-xs text-amber-300 space-y-2 text-left">
-              <div className="flex items-center gap-1.5 font-semibold text-[11px]">
-                <ShieldAlert className="w-4 h-4 text-amber-400" />
-                <span>Modo Demonstração Ativo</span>
-              </div>
-              <p className="text-[11px] text-calm-muted">
-                Para fins de teste da UI de administrador, clique no botão abaixo para simular o perfil mestre:
-              </p>
-              <Button
-                variant="primary"
-                size="sm"
-                className="w-full text-xs"
-                onClick={() => switchDemoUser("SUPER_ADMIN")}
-              >
-                Alternar para Super Admin (feraimentor@gmail.com)
-              </Button>
-            </div>
-          )}
 
           <div className="pt-2 border-t border-calm-border/60">
             <Link href="/dashboard">

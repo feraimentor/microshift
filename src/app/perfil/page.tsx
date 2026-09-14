@@ -20,7 +20,7 @@ import {
 
 export default function PerfilPage() {
   const router = useRouter();
-  const { profile, loading, linkEmailPassword, redeemCoupon, isMockMode, refreshProfile } = useAuth();
+  const { profile, loading, linkEmailPassword, redeemCoupon, refreshProfile } = useAuth();
 
   useEffect(() => {
     if (!loading && !profile) {
