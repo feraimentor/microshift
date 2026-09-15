@@ -14,6 +14,74 @@ body {
   overflow-x: hidden;
 }
 
+/* ==========================================================================
+   REGRA CRÍTICA DE LEGIBILIDADE: ÁREAS COM FUNDO BRANCO / CLARO
+   Todas as áreas, containers, inputs e textareas com fundo branco possuem
+   obrigatoriamente fonte em cinza chumbo (#1e293b / #334155).
+   ========================================================================== */
+
+/* Qualquer elemento ou card com classe de fundo branco / claro */
+.bg-white,
+[class*="bg-white"],
+.bg-slate-50,
+.bg-gray-50,
+.bg-zinc-50,
+.bg-slate-100,
+.bg-gray-100,
+.bg-zinc-100 {
+  color: #1e293b !important;
+}
+
+/* Textos internos em áreas brancas herdam ou adotam cinza chumbo */
+.bg-white p,
+.bg-white span,
+.bg-white div,
+.bg-white label,
+.bg-white h1,
+.bg-white h2,
+.bg-white h3,
+.bg-white h4,
+.bg-white h5,
+.bg-white h6,
+.bg-white li,
+.bg-white code,
+[class*="bg-white"] p,
+[class*="bg-white"] span,
+[class*="bg-white"] div,
+[class*="bg-white"] label,
+[class*="bg-white"] h1,
+[class*="bg-white"] h2,
+[class*="bg-white"] h3,
+[class*="bg-white"] h4,
+[class*="bg-white"] h5,
+[class*="bg-white"] h6,
+[class*="bg-white"] li {
+  color: #1e293b;
+}
+
+/* Inputs, Textareas e Selects: cor padrão em cinza chumbo para garantir contraste */
+input,
+textarea,
+select {
+  color: #1e293b;
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: #64748b;
+}
+
+/* Campos com fundo escuro explícito preservam texto claro */
+.dark-field,
+input.dark-input,
+textarea.dark-input,
+input[class*="bg-slate-9"],
+textarea[class*="bg-slate-9"],
+input[class*="bg-slate-8"],
+textarea[class*="bg-slate-8"] {
+  color: #f8fafc !important;
+}
+
 /* Custom scrollbars Calm Tech */
 ::-webkit-scrollbar {
   width: 8px;

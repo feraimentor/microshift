@@ -1280,7 +1280,7 @@ export default function AdminPage() {
                           setMentorConfig({ ...mentorConfig, systemPrompt: e.target.value })
                         }
                         rows={14}
-                        className="w-full bg-calm-card/80 border border-calm-border rounded-xl p-3.5 text-xs text-calm-text font-mono focus:outline-none focus:border-calm-accent focus:ring-1 focus:ring-calm-accent/40 resize-y leading-relaxed"
+                        className="w-full bg-white text-slate-800 border border-slate-300 rounded-xl p-3.5 text-xs font-mono font-medium placeholder:text-slate-400 focus:outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 resize-y leading-relaxed shadow-xs"
                         placeholder="Escreva as diretrizes comportamentais do Mentor Sover..."
                       />
                     </div>
@@ -1295,7 +1295,7 @@ export default function AdminPage() {
                           setMentorConfig({ ...mentorConfig, welcomeMessage: e.target.value })
                         }
                         rows={2}
-                        className="w-full bg-calm-card/80 border border-calm-border rounded-xl p-3 text-xs text-calm-text focus:outline-none focus:border-calm-accent"
+                        className="w-full bg-white text-slate-800 border border-slate-300 rounded-xl p-3 text-xs font-medium placeholder:text-slate-400 focus:outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 shadow-xs"
                         placeholder="Mensagem exibida ao abrir uma nova conversa..."
                       />
                     </div>
@@ -1331,7 +1331,7 @@ export default function AdminPage() {
                       onChange={(e) => setTestPrompt(e.target.value)}
                       onKeyDown={(e) => e.key === "Enter" && handleSendTestChat()}
                       placeholder="Ex: Tenho 43 anos e receio de não acompanhar o ritmo da IA..."
-                      className="flex-1 bg-calm-card/80 border border-calm-border rounded-xl px-3.5 py-2 text-xs text-calm-text focus:outline-none focus:border-calm-accent"
+                      className="flex-1 bg-white text-slate-800 border border-slate-300 rounded-xl px-3.5 py-2 text-xs font-medium placeholder:text-slate-400 focus:outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 shadow-xs"
                     />
                     <Button
                       type="button"
@@ -1388,12 +1388,12 @@ export default function AdminPage() {
                           setMentorConfig({ ...mentorConfig, apiKey: e.target.value })
                         }
                         placeholder="AIzaSy..."
-                        className="w-full bg-calm-card/80 border border-calm-border rounded-xl px-3.5 py-2 text-xs font-mono text-calm-text pr-10 focus:outline-none focus:border-calm-accent"
+                        className="w-full bg-white text-slate-800 border border-slate-300 rounded-xl px-3.5 py-2 text-xs font-mono font-medium placeholder:text-slate-400 pr-10 focus:outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 shadow-xs"
                       />
                       <button
                         type="button"
                         onClick={() => setShowApiKey(!showApiKey)}
-                        className="absolute right-3 top-2.5 text-calm-muted hover:text-calm-text"
+                        className="absolute right-3 top-2.5 text-slate-500 hover:text-slate-800"
                       >
                         {showApiKey ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
                       </button>
@@ -1596,7 +1596,7 @@ export default function AdminPage() {
                         value={manualTitle}
                         onChange={(e) => setManualTitle(e.target.value)}
                         placeholder="Título do Documento ou Metodologia"
-                        className="w-full bg-calm-card/80 border border-calm-border rounded-xl px-3 py-2 text-xs text-calm-text focus:outline-none focus:border-calm-accent"
+                        className="w-full bg-white text-slate-800 border border-slate-300 rounded-xl px-3 py-2 text-xs font-medium placeholder:text-slate-400 focus:outline-none focus:border-emerald-500 shadow-xs"
                         required
                       />
                     </div>
@@ -1606,7 +1606,7 @@ export default function AdminPage() {
                         onChange={(e) => setManualContent(e.target.value)}
                         rows={6}
                         placeholder="Cole o conteúdo, regras ou conceitos que o mentor deve dominar..."
-                        className="w-full bg-calm-card/80 border border-calm-border rounded-xl p-3 text-xs text-calm-text focus:outline-none focus:border-calm-accent resize-y"
+                        className="w-full bg-white text-slate-800 border border-slate-300 rounded-xl p-3 text-xs font-medium placeholder:text-slate-400 focus:outline-none focus:border-emerald-500 resize-y shadow-xs"
                         required
                       />
                     </div>
@@ -1726,7 +1726,7 @@ export default function AdminPage() {
                       value={newMcpName}
                       onChange={(e) => setNewMcpName(e.target.value)}
                       placeholder="Ex: Servidor de Mercado Tech & Vagas"
-                      className="w-full bg-calm-card/80 border border-calm-border rounded-xl px-3 py-2 text-xs text-calm-text focus:outline-none focus:border-calm-accent"
+                      className="w-full bg-white text-slate-800 border border-slate-300 rounded-xl px-3 py-2 text-xs font-medium placeholder:text-slate-400 focus:outline-none focus:border-emerald-500 shadow-xs"
                       required
                     />
                   </div>
@@ -1738,7 +1738,7 @@ export default function AdminPage() {
                       value={newMcpUrl}
                       onChange={(e) => setNewMcpUrl(e.target.value)}
                       placeholder="https://mcp.seudominio.com/sse"
-                      className="w-full bg-calm-card/80 border border-calm-border rounded-xl px-3 py-2 text-xs font-mono text-calm-text focus:outline-none focus:border-calm-accent"
+                      className="w-full bg-white text-slate-800 border border-slate-300 rounded-xl px-3 py-2 text-xs font-mono font-medium placeholder:text-slate-400 focus:outline-none focus:border-emerald-500 shadow-xs"
                       required
                     />
                   </div>
@@ -1749,7 +1749,7 @@ export default function AdminPage() {
                       <select
                         value={newMcpTransport}
                         onChange={(e) => setNewMcpTransport(e.target.value as "SSE" | "HTTP")}
-                        className="w-full bg-calm-card/80 border border-calm-border rounded-xl px-2.5 py-2 text-xs text-calm-text focus:outline-none focus:border-calm-accent"
+                        className="w-full bg-white text-slate-800 border border-slate-300 rounded-xl px-2.5 py-2 text-xs font-medium focus:outline-none focus:border-emerald-500 shadow-xs"
                       >
                         <option value="SSE">SSE (Server-Sent)</option>
                         <option value="HTTP">HTTP (Streamable)</option>
@@ -1763,7 +1763,7 @@ export default function AdminPage() {
                         value={newMcpToken}
                         onChange={(e) => setNewMcpToken(e.target.value)}
                         placeholder="Token secreto"
-                        className="w-full bg-calm-card/80 border border-calm-border rounded-xl px-3 py-2 text-xs font-mono text-calm-text focus:outline-none focus:border-calm-accent"
+                        className="w-full bg-white text-slate-800 border border-slate-300 rounded-xl px-3 py-2 text-xs font-mono font-medium placeholder:text-slate-400 focus:outline-none focus:border-emerald-500 shadow-xs"
                       />
                     </div>
                   </div>
@@ -1775,7 +1775,7 @@ export default function AdminPage() {
                       onChange={(e) => setNewMcpDesc(e.target.value)}
                       rows={2}
                       placeholder="Quais ferramentas e consultas esse MCP provê ao mentor..."
-                      className="w-full bg-calm-card/80 border border-calm-border rounded-xl p-2.5 text-xs text-calm-text focus:outline-none focus:border-calm-accent"
+                      className="w-full bg-white text-slate-800 border border-slate-300 rounded-xl p-2.5 text-xs font-medium placeholder:text-slate-400 focus:outline-none focus:border-emerald-500 shadow-xs"
                     />
                   </div>
 
