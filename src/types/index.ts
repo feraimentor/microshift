@@ -115,7 +115,12 @@ export interface MentorChatSession {
   updatedAt: string;
 }
 
-export type GeminiModelId = "gemini-2.0-flash" | "gemini-1.5-pro" | "gemini-1.5-flash";
+export type GeminiModelId =
+  | "gemini-2.5-flash"
+  | "gemini-2.5-pro"
+  | "gemini-1.5-pro"
+  | "gemini-1.5-flash"
+  | "gemini-2.0-flash";
 
 export interface MentorAiConfig {
   apiKey: string;

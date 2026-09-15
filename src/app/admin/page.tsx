@@ -1440,22 +1440,28 @@ export default function AdminPage() {
                   <div className="space-y-2">
                     {[
                       {
-                        id: "gemini-2.0-flash",
-                        name: "Gemini 2.0 Flash",
+                        id: "gemini-2.5-flash",
+                        name: "Gemini 2.5 Flash",
                         badge: "Recomendado",
-                        desc: "Mais recente, ultra-rápido, fluência humana superior em PT-BR.",
+                        desc: "Nova geração oficial do Google. Ultra-rápido, fluência humana superior e alta taxa de resposta.",
+                      },
+                      {
+                        id: "gemini-2.5-pro",
+                        name: "Gemini 2.5 Pro",
+                        badge: "Avançado",
+                        desc: "Capacidade máxima de raciocínio, ideal para decisões estratégicas e mentoria executiva profunda.",
                       },
                       {
                         id: "gemini-1.5-pro",
                         name: "Gemini 1.5 Pro",
                         badge: "Executivo",
-                        desc: "Raciocínio complexo e analítico para mentoria de alta senioridade.",
+                        desc: "Janela massiva de contexto e raciocínio analítico para alta senioridade.",
                       },
                       {
                         id: "gemini-1.5-flash",
                         name: "Gemini 1.5 Flash",
                         badge: "Econômico",
-                        desc: "Alta velocidade para diálogos pontuais.",
+                        desc: "Alta estabilidade e velocidade para diálogos rápidos.",
                       },
                     ].map((m) => (
                       <div

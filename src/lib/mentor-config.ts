@@ -40,7 +40,7 @@ export const DEFAULT_WELCOME_MESSAGE =
 
 export const DEFAULT_MENTOR_CONFIG: MentorAiConfig = {
   apiKey: "",
-  model: "gemini-2.0-flash",
+  model: "gemini-2.5-flash",
   temperature: 0.7,
   systemPrompt: DEFAULT_SYSTEM_PROMPT,
   welcomeMessage: DEFAULT_WELCOME_MESSAGE,
@@ -81,13 +81,21 @@ export const INITIAL_KNOWLEDGE_DOCS: KnowledgeDocument[] = [
 /* CONFIGURAÇÃO DO MENTOR IA                                     */
 /* ------------------------------------------------------------- */
 
+export function normalizeGeminiModel(model?: string): GeminiModelId {
+  if (!model || model === "gemini-2.0-flash" || model === "gemini-2.0-flash-exp") {
+    return "gemini-2.5-flash";
+  }
+  return model as GeminiModelId;
+}
+
 export function getLocalMentorAiConfig(): MentorAiConfig {
   if (typeof window === "undefined") return DEFAULT_MENTOR_CONFIG;
   try {
     const saved = localStorage.getItem(LOCAL_MENTOR_CONFIG_KEY);
     if (saved) {
       const parsed = JSON.parse(saved);
-      return { ...DEFAULT_MENTOR_CONFIG, ...parsed };
+      const model = normalizeGeminiModel(parsed.model);
+      return { ...DEFAULT_MENTOR_CONFIG, ...parsed, model };
     }
   } catch {}
   return DEFAULT_MENTOR_CONFIG;
@@ -96,7 +104,11 @@ export function getLocalMentorAiConfig(): MentorAiConfig {
 export function saveLocalMentorAiConfig(config: MentorAiConfig): void {
   if (typeof window === "undefined") return;
   try {
-    localStorage.setItem(LOCAL_MENTOR_CONFIG_KEY, JSON.stringify(config));
+    const normalizedConfig = {
+      ...config,
+      model: normalizeGeminiModel(config.model),
+    };
+    localStorage.setItem(LOCAL_MENTOR_CONFIG_KEY, JSON.stringify(normalizedConfig));
   } catch {}
 }
 
@@ -112,10 +124,12 @@ export async function fetchMentorAiConfig(): Promise<MentorAiConfig> {
     const snap = await withTimeout(getDoc(docRef), 1800);
     if (snap.exists()) {
       const data = snap.data() as Partial<MentorAiConfig>;
+      const model = normalizeGeminiModel(data.model || local.model);
       const merged: MentorAiConfig = {
         ...DEFAULT_MENTOR_CONFIG,
         ...local,
         ...data,
+        model,
       };
       saveLocalMentorAiConfig(merged);
       return merged;

@@ -77,7 +77,7 @@ export default function MentorPage() {
   // Estados do Modal da Chave Gemini e Status do Agente
   const [hasApiKey, setHasApiKey] = useState(false);
   const [hasEffectiveKey, setHasEffectiveKey] = useState(false);
-  const [activeModel, setActiveModel] = useState("gemini-2.0-flash");
+  const [activeModel, setActiveModel] = useState("gemini-2.5-flash");
   const [isRagActive, setIsRagActive] = useState(true);
   const [isKeyModalOpen, setIsKeyModalOpen] = useState(false);
   const [apiKeyInput, setApiKeyInput] = useState("");
@@ -99,7 +99,7 @@ export default function MentorPage() {
     async function loadAgentStatus() {
       try {
         const config = await fetchMentorAiConfig();
-        setActiveModel(config.model || "gemini-2.0-flash");
+        setActiveModel(config.model || "gemini-2.5-flash");
         setIsRagActive(config.ragEnabled);
         const effKey = await getEffectiveApiKey();
         setHasEffectiveKey(Boolean(effKey));

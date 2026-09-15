@@ -11,6 +11,7 @@ import {
   fetchKnowledgeBase,
   findRelevantKnowledge,
   fetchMcpServers,
+  normalizeGeminiModel,
 } from "./mentor-config";
 
 const LOCAL_GEMINI_KEY = "microshift_gemini_api_key";
@@ -78,12 +79,14 @@ export async function callGeminiRest(
   apiKey: string,
   contents: { role: string; parts: { text: string }[] }[],
   systemInstruction: string,
-  model: GeminiModelId = "gemini-2.0-flash",
+  model: GeminiModelId = "gemini-2.5-flash",
   temperature: number = 0.7,
   jsonMode: boolean = false
 ): Promise<string | null> {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 12000);
+
+  const initialModel = normalizeGeminiModel(model);
 
   const executeRequest = async (targetModel: string): Promise<string | null> => {
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${targetModel}:generateContent?key=${apiKey}`;
@@ -118,10 +121,15 @@ export async function callGeminiRest(
 
   try {
     // 1. Tenta o modelo principal escolhido
-    let result = await executeRequest(model);
+    let result = await executeRequest(initialModel);
 
     // 2. Fallback de resiliência caso o modelo principal dê 404 ou erro
-    if (!result && model !== "gemini-1.5-flash") {
+    if (!result && initialModel !== "gemini-2.5-flash") {
+      console.warn(`Tentando fallback com gemini-2.5-flash...`);
+      result = await executeRequest("gemini-2.5-flash");
+    }
+
+    if (!result && initialModel !== "gemini-1.5-flash") {
       console.warn(`Tentando fallback com gemini-1.5-flash...`);
       result = await executeRequest("gemini-1.5-flash");
     }
@@ -141,29 +149,46 @@ export async function callGeminiRest(
  */
 export async function testGeminiConnection(
   apiKey: string,
-  model: GeminiModelId = "gemini-2.0-flash"
+  model: GeminiModelId = "gemini-2.5-flash"
 ): Promise<{ success: boolean; message: string }> {
   const cleanKey = apiKey.trim();
   if (!cleanKey) {
     return { success: false, message: "A chave de API não foi informada." };
   }
 
+  // Garante que modelos depreciados (ex: 2.0-flash) migrem de imediato para 2.5-flash
+  const targetModel = normalizeGeminiModel(model);
+
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 10000);
 
-  try {
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${cleanKey}`;
+  const testSingleModel = async (mod: string) => {
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${mod}:generateContent?key=${cleanKey}`;
     const body = {
       contents: [{ role: "user", parts: [{ text: "Responda apenas: OK" }] }],
       generationConfig: { temperature: 0.1 },
     };
 
-    const res = await fetch(url, {
+    return fetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
       signal: controller.signal,
     });
+  };
+
+  try {
+    let res = await testSingleModel(targetModel);
+
+    // Se o modelo escolhido retornar 404 Not Found, tenta fallback para gemini-2.5-flash ou 1.5-flash
+    let testedModel = targetModel;
+    if (!res.ok && res.status === 404 && targetModel !== "gemini-2.5-flash") {
+      const fallbackRes = await testSingleModel("gemini-2.5-flash");
+      if (fallbackRes.ok) {
+        res = fallbackRes;
+        testedModel = "gemini-2.5-flash";
+      }
+    }
 
     clearTimeout(timeoutId);
 
@@ -172,7 +197,7 @@ export async function testGeminiConnection(
       const reply = data?.candidates?.[0]?.content?.parts?.[0]?.text || "OK";
       return {
         success: true,
-        message: `Conexão bem-sucedida! O modelo ${model} respondeu em tempo real: "${reply.trim()}". Salve as configurações para ativar para todos os alunos.`,
+        message: `Conexão bem-sucedida! O modelo ${testedModel} respondeu em tempo real: "${reply.trim()}". Salve as configurações para ativar para todos os alunos.`,
       };
     }
 
@@ -202,6 +227,13 @@ export async function testGeminiConnection(
         success: false,
         message:
           "Chave inválida (API_KEY_INVALID). Verifique se copiou todos os caracteres da chave gerada no Google AI Studio.",
+      };
+    }
+
+    if (errorCode === 404 && rawMessage.includes("no longer available")) {
+      return {
+        success: false,
+        message: `O Google informou que o modelo anterior foi descontinuado e substituído pelo Gemini 2.5 Flash. Atualize a seleção de modelo para "Gemini 2.5 Flash" e teste novamente.`,
       };
     }
 
@@ -362,7 +394,7 @@ CONTEXTO DO ALUNO:
       apiKey,
       formattedContents,
       systemInstruction,
-      config.model || "gemini-2.0-flash",
+      normalizeGeminiModel(config.model),
       config.temperature ?? 0.7,
       false
     );
@@ -398,13 +430,14 @@ Retorne EXCLUSIVAMENTE um JSON no seguinte formato:
     { "stepNumber": 1, "title": "...", "durationMinutes": 15 },
     { "stepNumber": 2, "title": "...", "durationMinutes": 10 }
   ]
-}`;
+}
+`;
 
     const res = await callGeminiRest(
       apiKey,
       [{ role: "user", parts: [{ text: prompt }] }],
       "Você é um gerador JSON estrito.",
-      config.model || "gemini-2.0-flash",
+      normalizeGeminiModel(config.model),
       0.3,
       true
     );
