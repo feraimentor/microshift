@@ -44,7 +44,9 @@ import {
 import {
   fetchMicrolearningLessons,
   createMicrolearningLesson,
+  INITIAL_MICROLEARNING_LESSONS,
 } from "@/lib/microlearning";
+import { INITIAL_COUPONS } from "@/lib/mock-data";
 
 export default function AdminPage() {
   const router = useRouter();
@@ -60,8 +62,8 @@ export default function AdminPage() {
   const [activeTab, setActiveTab] = useState<"COUPONS" | "USERS" | "LESSONS">("COUPONS");
 
   // Estados de Cupons
-  const [coupons, setCoupons] = useState<Coupon[]>([]);
-  const [loadingCoupons, setLoadingCoupons] = useState(true);
+  const [coupons, setCoupons] = useState<Coupon[]>(INITIAL_COUPONS);
+  const [loadingCoupons, setLoadingCoupons] = useState(false);
   const [couponCreationMode, setCouponCreationMode] = useState<"SINGLE" | "BATCH">("SINGLE");
   const [singleCode, setSingleCode] = useState("");
   const [batchPrefix, setBatchPrefix] = useState("TURMA35");
@@ -75,13 +77,13 @@ export default function AdminPage() {
 
   // Estados de Usuários
   const [users, setUsers] = useState<UserProfile[]>([]);
-  const [loadingUsers, setLoadingUsers] = useState(true);
+  const [loadingUsers, setLoadingUsers] = useState(false);
   const [userSearch, setUserSearch] = useState("");
   const [userFeedback, setUserFeedback] = useState<string | null>(null);
 
   // Estados de Microlearning (Aulas)
-  const [lessons, setLessons] = useState<MicrolearningLesson[]>([]);
-  const [loadingLessons, setLoadingLessons] = useState(true);
+  const [lessons, setLessons] = useState<MicrolearningLesson[]>(INITIAL_MICROLEARNING_LESSONS);
+  const [loadingLessons, setLoadingLessons] = useState(false);
   const [lessonModule, setLessonModule] = useState("Neurociência da Mudança Tardia");
   const [lessonTitle, setLessonTitle] = useState("");
   const [lessonUrl, setLessonUrl] = useState("");

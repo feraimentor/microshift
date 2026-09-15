@@ -11,6 +11,7 @@ import {
   fetchMicrolearningLessons,
   fetchUserCompletedLessons,
   toggleLessonCompletion,
+  INITIAL_MICROLEARNING_LESSONS,
 } from "@/lib/microlearning";
 
 export default function MicrolearningPage() {
@@ -22,17 +23,16 @@ export default function MicrolearningPage() {
       router.push("/login");
     }
   }, [authLoading, profile, router]);
-  const [lessons, setLessons] = useState<MicrolearningLesson[]>([]);
-  const [selectedLesson, setSelectedLesson] = useState<MicrolearningLesson | null>(null);
+  const [lessons, setLessons] = useState<MicrolearningLesson[]>(INITIAL_MICROLEARNING_LESSONS);
+  const [selectedLesson, setSelectedLesson] = useState<MicrolearningLesson | null>(INITIAL_MICROLEARNING_LESSONS[0] || null);
   const [completedLessons, setCompletedLessons] = useState<string[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
 
   const loadLessonsAndProgress = async () => {
     try {
-      setLoading(true);
       const allLessons = await fetchMicrolearningLessons();
       setLessons(allLessons);
-      if (allLessons.length > 0) {
+      if (allLessons.length > 0 && !selectedLesson) {
         setSelectedLesson(allLessons[0]);
       }
 

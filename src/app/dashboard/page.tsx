@@ -29,7 +29,7 @@ import {
   Share2,
 } from "lucide-react";
 import { HabitGoal } from "@/types";
-import { fetchUserGoals, createUserGoal, completeGoalToday, deleteUserGoal } from "@/lib/goals";
+import { fetchUserGoals, createUserGoal, completeGoalToday, deleteUserGoal, getLocalGoals } from "@/lib/goals";
 
 export default function DashboardPage() {
   const router = useRouter();
@@ -89,8 +89,12 @@ export default function DashboardPage() {
 
   const loadGoals = async () => {
     if (!profile) return;
+    const cached = getLocalGoals(profile.uid);
+    if (cached.length > 0 && goals.length === 0) {
+      setGoals(cached);
+      setLoadingGoals(false);
+    }
     try {
-      setLoadingGoals(true);
       const userGoals = await fetchUserGoals(profile.uid);
       setGoals(userGoals);
     } catch (err) {

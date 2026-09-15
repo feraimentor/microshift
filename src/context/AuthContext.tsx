@@ -10,6 +10,7 @@ import {
   logoutUser,
   linkEmailPasswordCredential,
   syncUserProfile,
+  buildImmediateProfile,
 } from "@/lib/auth";
 import { redeemCouponTransaction } from "@/lib/coupons";
 import { UserProfile, SubscriptionPlan, PlanStatus } from "@/types";
@@ -36,36 +37,28 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     // Monitoramento reativo e oficial de sessão do Firebase Auth
-    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
-      setLoading(true);
+    const unsubscribe = onAuthStateChanged(auth, (firebaseUser) => {
       if (firebaseUser) {
         setUser(firebaseUser);
-        try {
-          const userProf = await syncUserProfile(firebaseUser);
-          setProfile(userProf);
-        } catch (err) {
-          console.error("Erro ao sincronizar perfil do usuário:", err);
-          // Mesmo com falha de rede/firestore, monta com os dados reais do Google
-          setProfile({
-            uid: firebaseUser.uid,
-            email: firebaseUser.email || "",
-            displayName: firebaseUser.displayName || "Usuário",
-            photoURL: firebaseUser.photoURL || undefined,
-            role: firebaseUser.email?.toLowerCase() === "feraimentor@gmail.com" ? "SUPER_ADMIN" : "USER",
-            plan: firebaseUser.email?.toLowerCase() === "feraimentor@gmail.com" ? "SOVER" : "START",
-            status: firebaseUser.email?.toLowerCase() === "feraimentor@gmail.com" ? "ACTIVE_VIP" : "ACTIVE",
-            streak: 0,
-            completedLessons: [],
-            createdAt: new Date().toISOString(),
-            lastActiveDate: new Date().toISOString(),
+        // Instantâneo (0ms): monta o perfil com dados reais da conta Google/Firebase e cache
+        const immediateProfile = buildImmediateProfile(firebaseUser);
+        setProfile(immediateProfile);
+        setLoading(false);
+
+        // Sincronização resiliente em background com o Firestore (não-bloqueante)
+        syncUserProfile(firebaseUser)
+          .then((synced) => {
+            setProfile(synced);
+          })
+          .catch((err) => {
+            console.warn("Sincronização em background do Firestore não respondeu a tempo:", err);
           });
-        }
       } else {
-        // Deslogado
+        // Deslogado imediatamente
         setUser(null);
         setProfile(null);
+        setLoading(false);
       }
-      setLoading(false);
     });
 
     return () => unsubscribe();

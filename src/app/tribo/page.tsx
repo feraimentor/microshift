@@ -7,7 +7,7 @@ import { Card, CardHeader, CardTitle, CardDescription } from "@/components/ui/ca
 import { Button } from "@/components/ui/button";
 import { Users, Award, HelpCircle, Heart, Sparkles, Send, CheckCircle2 } from "lucide-react";
 import { CommunityPost, PostCategory } from "@/types";
-import { fetchCommunityPosts, createCommunityPost, reactToCommunityPost } from "@/lib/community";
+import { fetchCommunityPosts, createCommunityPost, reactToCommunityPost, getLocalPosts } from "@/lib/community";
 
 export default function TriboPage() {
   const router = useRouter();
@@ -27,9 +27,15 @@ export default function TriboPage() {
   const [postFeedback, setPostFeedback] = useState(false);
 
   const loadPosts = async () => {
+    const cat = activeTab === "TODOS" ? undefined : (activeTab as PostCategory);
+    const cached = getLocalPosts();
+    const filteredCached = cat ? cached.filter((p) => p.category === cat) : cached;
+    if (filteredCached.length > 0 && posts.length === 0) {
+      setPosts(filteredCached);
+      setLoadingPosts(false);
+    }
+
     try {
-      setLoadingPosts(true);
-      const cat = activeTab === "TODOS" ? undefined : (activeTab as PostCategory);
       const list = await fetchCommunityPosts(cat);
       setPosts(list);
     } catch (err) {

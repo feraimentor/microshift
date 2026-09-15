@@ -12,6 +12,7 @@ import {
 } from "firebase/firestore";
 import { db, hasFirebaseConfig } from "./firebase";
 import { MicrolearningLesson } from "@/types";
+import { withTimeout } from "./firestore-utils";
 
 export function extractYouTubeId(url: string): string {
   const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|\&v=)([^#\&\?]*).*/;
@@ -100,20 +101,23 @@ function saveLocalCompletedLessons(userId: string, completed: string[]) {
 }
 
 export async function fetchMicrolearningLessons(): Promise<MicrolearningLesson[]> {
+  const localList = getLocalLessons();
   if (!hasFirebaseConfig) {
-    return getLocalLessons();
+    return localList;
   }
 
   try {
     const q = query(collection(db, "lessons"));
-    const snap = await getDocs(q);
+    const snap = await withTimeout(getDocs(q), 1500, "Firestore lessons timeout");
     const lessons: MicrolearningLesson[] = [];
     snap.forEach((d) => lessons.push(d.data() as MicrolearningLesson));
-    if (lessons.length === 0) return getLocalLessons();
-    return lessons.sort((a, b) => (a.order || 0) - (b.order || 0));
+    if (lessons.length === 0) return localList;
+    const sorted = lessons.sort((a, b) => (a.order || 0) - (b.order || 0));
+    saveLocalLessons(sorted);
+    return sorted;
   } catch (err) {
-    console.warn("Falha ao buscar aulas no Firestore, usando fallback:", err);
-    return getLocalLessons();
+    console.warn("Falha ou timeout ao buscar aulas no Firestore, usando fallback local:", err);
+    return localList;
   }
 }
 
@@ -158,33 +162,40 @@ export async function createMicrolearningLesson(
     };
   }
 
-  if (!hasFirebaseConfig) {
-    const list = getLocalLessons();
-    list.push(lesson);
-    saveLocalLessons(list);
-    return lesson;
+  // Salva localmente em 0ms
+  const list = getLocalLessons();
+  list.push(lesson);
+  saveLocalLessons(list);
+
+  // Sincroniza com o Firestore em background
+  if (hasFirebaseConfig) {
+    const lessonRef = doc(db, "lessons", lesson.id);
+    withTimeout(setDoc(lessonRef, lesson), 1500).catch((err) => {
+      console.warn("Sync do Firestore ao criar aula falhou ou deu timeout:", err);
+    });
   }
 
-  const lessonRef = doc(db, "lessons", lesson.id);
-  await setDoc(lessonRef, lesson);
   return lesson;
 }
 
 export async function fetchUserCompletedLessons(userId: string): Promise<string[]> {
+  const localCompleted = getLocalCompletedLessons(userId);
   if (!hasFirebaseConfig) {
-    return getLocalCompletedLessons(userId);
+    return localCompleted;
   }
 
   try {
     const userRef = doc(db, "users", userId);
-    const snap = await getDoc(userRef);
+    const snap = await withTimeout(getDoc(userRef), 1200, "Firestore user completed lessons timeout");
     if (snap.exists()) {
-      return snap.data()?.completedLessons || [];
+      const remote = snap.data()?.completedLessons || [];
+      saveLocalCompletedLessons(userId, remote);
+      return remote;
     }
-    return [];
+    return localCompleted;
   } catch (err) {
-    console.warn("Falha ao buscar progresso no Firestore, usando fallback:", err);
-    return getLocalCompletedLessons(userId);
+    console.warn("Falha ou timeout ao buscar progresso no Firestore, usando fallback local:", err);
+    return localCompleted;
   }
 }
 
@@ -192,26 +203,28 @@ export async function toggleLessonCompletion(
   userId: string,
   lessonId: string
 ): Promise<{ completed: boolean; completedLessons: string[] }> {
-  if (!hasFirebaseConfig) {
-    let completed = getLocalCompletedLessons(userId);
-    const exists = completed.includes(lessonId);
-    if (exists) {
-      completed = completed.filter((id) => id !== lessonId);
-    } else {
-      completed.push(lessonId);
-    }
-    saveLocalCompletedLessons(userId, completed);
-    return { completed: !exists, completedLessons: completed };
+  // Atualiza localmente em 0ms
+  let completed = getLocalCompletedLessons(userId);
+  const exists = completed.includes(lessonId);
+  if (exists) {
+    completed = completed.filter((id) => id !== lessonId);
+  } else {
+    completed.push(lessonId);
+  }
+  saveLocalCompletedLessons(userId, completed);
+
+  // Sincroniza com o Firestore em background
+  if (hasFirebaseConfig) {
+    const userRef = doc(db, "users", userId);
+    withTimeout(
+      updateDoc(userRef, {
+        completedLessons: exists ? arrayRemove(lessonId) : arrayUnion(lessonId),
+      }),
+      1500
+    ).catch((err) => {
+      console.warn("Sync do progresso de aulas no Firestore falhou ou deu timeout:", err);
+    });
   }
 
-  const userRef = doc(db, "users", userId);
-  const current = await fetchUserCompletedLessons(userId);
-  const exists = current.includes(lessonId);
-
-  await updateDoc(userRef, {
-    completedLessons: exists ? arrayRemove(lessonId) : arrayUnion(lessonId),
-  });
-
-  const updatedList = exists ? current.filter((id) => id !== lessonId) : [...current, lessonId];
-  return { completed: !exists, completedLessons: updatedList };
+  return { completed: !exists, completedLessons: completed };
 }

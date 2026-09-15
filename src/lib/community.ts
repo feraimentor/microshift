@@ -11,10 +11,11 @@ import {
 import { db, hasFirebaseConfig } from "./firebase";
 import { CommunityPost, PostCategory } from "@/types";
 import { INITIAL_POSTS } from "./mock-data";
+import { withTimeout } from "./firestore-utils";
 
 const LOCAL_POSTS_KEY = "microshift_community_posts";
 
-function getLocalPosts(): CommunityPost[] {
+export function getLocalPosts(): CommunityPost[] {
   if (typeof window === "undefined") return INITIAL_POSTS;
   const saved = localStorage.getItem(LOCAL_POSTS_KEY);
   if (!saved) {
@@ -28,16 +29,20 @@ function getLocalPosts(): CommunityPost[] {
   }
 }
 
-function saveLocalPosts(posts: CommunityPost[]) {
+export function saveLocalPosts(posts: CommunityPost[]): void {
   if (typeof window === "undefined") return;
-  localStorage.setItem(LOCAL_POSTS_KEY, JSON.stringify(posts));
+  try {
+    localStorage.setItem(LOCAL_POSTS_KEY, JSON.stringify(posts));
+  } catch {}
 }
 
 export async function fetchCommunityPosts(category?: PostCategory): Promise<CommunityPost[]> {
+  const localList = getLocalPosts();
+  const filterCategory = (list: CommunityPost[]) =>
+    category ? list.filter((p) => p.category === category) : list;
+
   if (!hasFirebaseConfig) {
-    const list = getLocalPosts();
-    if (!category) return list;
-    return list.filter((p) => p.category === category);
+    return filterCategory(localList);
   }
 
   try {
@@ -45,20 +50,18 @@ export async function fetchCommunityPosts(category?: PostCategory): Promise<Comm
     if (category) {
       q = query(collection(db, "community"), where("category", "==", category));
     }
-    const snap = await getDocs(q);
+    const snap = await withTimeout(getDocs(q), 1500, "Firestore community timeout");
     const posts: CommunityPost[] = [];
     snap.forEach((d) => posts.push(d.data() as CommunityPost));
     if (posts.length === 0) {
-      const list = getLocalPosts();
-      if (!category) return list;
-      return list.filter((p) => p.category === category);
+      return filterCategory(localList);
     }
-    return posts.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    const sorted = posts.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    saveLocalPosts(sorted);
+    return sorted;
   } catch (err) {
-    console.warn("Falha ao buscar posts da Tribo no Firestore, usando fallback local:", err);
-    const list = getLocalPosts();
-    if (!category) return list;
-    return list.filter((p) => p.category === category);
+    console.warn("Falha ou timeout ao buscar posts da Tribo no Firestore, usando fallback local:", err);
+    return filterCategory(localList);
   }
 }
 
@@ -101,15 +104,19 @@ export async function createCommunityPost(
     userReactions: {},
   };
 
-  if (!hasFirebaseConfig) {
-    const posts = getLocalPosts();
-    posts.unshift(newPost);
-    saveLocalPosts(posts);
-    return newPost;
+  // Salva localmente em 0ms
+  const posts = getLocalPosts();
+  posts.unshift(newPost);
+  saveLocalPosts(posts);
+
+  // Sincroniza com o Firestore em background
+  if (hasFirebaseConfig) {
+    const postRef = doc(db, "community", newPost.id);
+    withTimeout(setDoc(postRef, newPost), 1500).catch((err) => {
+      console.warn("Sync do Firestore ao criar post falhou ou deu timeout:", err);
+    });
   }
 
-  const postRef = doc(db, "community", newPost.id);
-  await setDoc(postRef, newPost);
   return newPost;
 }
 
@@ -119,35 +126,27 @@ export async function reactToCommunityPost(
   optionalType?: "forca" | "inspirador" | "aprendi"
 ): Promise<CommunityPost> {
   const reactionType = (optionalType || reactionTypeOrUserId) as "forca" | "inspirador" | "aprendi";
-  const userId = optionalType ? reactionTypeOrUserId : "user_reaction_anonymous";
 
-  if (!hasFirebaseConfig) {
-    const posts = getLocalPosts();
-    const post = posts.find((p) => p.id === postId);
-    if (!post) throw new Error("Post não encontrado.");
-
-    if (!post.reactions) {
-      post.reactions = { forca: 0, inspirador: 0, aprendi: 0 };
-    }
-    post.reactions[reactionType] = (post.reactions[reactionType] || 0) + 1;
-    saveLocalPosts(posts);
-    return post;
-  }
-
-  const postRef = doc(db, "community", postId);
-  const posts = await fetchCommunityPosts();
+  // Atualiza localmente em 0ms
+  const posts = getLocalPosts();
   const post = posts.find((p) => p.id === postId);
   if (!post) throw new Error("Post não encontrado.");
 
-  const updates: any = {};
-  updates[`reactions.${reactionType}`] = increment(1);
-  await updateDoc(postRef, updates);
+  if (!post.reactions) {
+    post.reactions = { forca: 0, inspirador: 0, aprendi: 0 };
+  }
+  post.reactions[reactionType] = (post.reactions[reactionType] || 0) + 1;
+  saveLocalPosts(posts);
 
-  return {
-    ...post,
-    reactions: {
-      ...post.reactions,
-      [reactionType]: (post.reactions?.[reactionType] || 0) + 1,
-    },
-  };
+  // Sincroniza com o Firestore em background
+  if (hasFirebaseConfig) {
+    const postRef = doc(db, "community", postId);
+    const updates: any = {};
+    updates[`reactions.${reactionType}`] = increment(1);
+    withTimeout(updateDoc(postRef, updates), 1500).catch((err) => {
+      console.warn("Sync de reação no Firestore falhou ou deu timeout:", err);
+    });
+  }
+
+  return post;
 }
