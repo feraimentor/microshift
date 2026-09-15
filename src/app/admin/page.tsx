@@ -231,6 +231,9 @@ export default function AdminPage() {
       setTestResult(null);
       const res = await testGeminiConnection(mentorConfig.apiKey, mentorConfig.model);
       setTestResult(res);
+      if (res.success && res.activeModel && res.activeModel !== mentorConfig.model) {
+        setMentorConfig((prev) => ({ ...prev, model: res.activeModel! }));
+      }
     } catch (err: any) {
       setTestResult({ success: false, message: "Erro ao testar: " + err.message });
     } finally {

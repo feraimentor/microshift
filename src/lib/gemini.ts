@@ -73,20 +73,26 @@ export async function getEffectiveApiKey(): Promise<string> {
 }
 
 /**
- * Executa requisição direta à API REST do Google Gemini
+ * Executa requisição direta à API REST do Google Gemini com fallback em cascata
  */
 export async function callGeminiRest(
   apiKey: string,
   contents: { role: string; parts: { text: string }[] }[],
   systemInstruction: string,
-  model: GeminiModelId = "gemini-2.5-flash",
+  model: GeminiModelId = "gemini-1.5-flash",
   temperature: number = 0.7,
   jsonMode: boolean = false
 ): Promise<string | null> {
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 12000);
+  const timeoutId = setTimeout(() => controller.abort(), 14000);
 
-  const initialModel = normalizeGeminiModel(model);
+  const cleanRequested = (model || "").replace(/^models\//, "");
+  const candidateModels = [
+    cleanRequested && cleanRequested !== "gemini-2.0-flash" ? cleanRequested : "gemini-1.5-flash",
+    "gemini-1.5-flash",
+    "gemini-2.5-flash",
+    "gemini-1.5-pro",
+  ].filter((m, i, arr) => arr.indexOf(m) === i);
 
   const executeRequest = async (targetModel: string): Promise<string | null> => {
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${targetModel}:generateContent?key=${apiKey}`;
@@ -120,22 +126,15 @@ export async function callGeminiRest(
   };
 
   try {
-    // 1. Tenta o modelo principal escolhido
-    let result = await executeRequest(initialModel);
-
-    // 2. Fallback de resiliência caso o modelo principal dê 404 ou erro
-    if (!result && initialModel !== "gemini-2.5-flash") {
-      console.warn(`Tentando fallback com gemini-2.5-flash...`);
-      result = await executeRequest("gemini-2.5-flash");
+    for (const targetModel of candidateModels) {
+      const result = await executeRequest(targetModel);
+      if (result) {
+        clearTimeout(timeoutId);
+        return result;
+      }
     }
-
-    if (!result && initialModel !== "gemini-1.5-flash") {
-      console.warn(`Tentando fallback com gemini-1.5-flash...`);
-      result = await executeRequest("gemini-1.5-flash");
-    }
-
     clearTimeout(timeoutId);
-    return result;
+    return null;
   } catch (err: any) {
     clearTimeout(timeoutId);
     console.warn("Falha ou timeout ao consultar Gemini REST:", err.message);
@@ -144,98 +143,139 @@ export async function callGeminiRest(
 }
 
 /**
- * Testa a conexão da Chave de API e do Modelo diretamente no Admin
- * Retorna diagnósticos precisos em caso de bloqueio ou erro do Google Cloud.
+ * Testa a conexão da Chave de API e do Modelo diretamente no Admin.
+ * Valida a chave em tempo real na API do Google e descobre os modelos suportados.
  */
 export async function testGeminiConnection(
   apiKey: string,
-  model: GeminiModelId = "gemini-2.5-flash"
-): Promise<{ success: boolean; message: string }> {
+  model: GeminiModelId = "gemini-1.5-flash"
+): Promise<{ success: boolean; message: string; activeModel?: GeminiModelId }> {
   const cleanKey = apiKey.trim();
   if (!cleanKey) {
     return { success: false, message: "A chave de API não foi informada." };
   }
 
-  // Garante que modelos depreciados (ex: 2.0-flash) migrem de imediato para 2.5-flash
-  const targetModel = normalizeGeminiModel(model);
-
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 10000);
-
-  const testSingleModel = async (mod: string) => {
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/${mod}:generateContent?key=${cleanKey}`;
-    const body = {
-      contents: [{ role: "user", parts: [{ text: "Responda apenas: OK" }] }],
-      generationConfig: { temperature: 0.1 },
-    };
-
-    return fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-      signal: controller.signal,
-    });
-  };
+  const timeoutId = setTimeout(() => controller.abort(), 12000);
 
   try {
-    let res = await testSingleModel(targetModel);
+    // 1. Consulta modelos disponíveis diretamente na conta do usuário no Google AI Studio
+    let availableModels: string[] = [];
+    try {
+      const listRes = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models?key=${cleanKey}`,
+        { signal: controller.signal }
+      );
 
-    // Se o modelo escolhido retornar 404 Not Found, tenta fallback para gemini-2.5-flash ou 1.5-flash
-    let testedModel = targetModel;
-    if (!res.ok && res.status === 404 && targetModel !== "gemini-2.5-flash") {
-      const fallbackRes = await testSingleModel("gemini-2.5-flash");
-      if (fallbackRes.ok) {
-        res = fallbackRes;
-        testedModel = "gemini-2.5-flash";
+      if (!listRes.ok) {
+        const errText = await listRes.text();
+        let errJson: any = null;
+        try { errJson = JSON.parse(errText); } catch {}
+        const errorReason = errJson?.error?.details?.[0]?.reason || "";
+        const rawMessage = errJson?.error?.message || errText;
+
+        if (errorReason === "API_KEY_SERVICE_BLOCKED" || rawMessage.includes("blocked")) {
+          return {
+            success: false,
+            message:
+              "Chave bloqueada pelo Google (API_KEY_SERVICE_BLOCKED). Essa chave é a do Firebase e tem restrições de serviço no Google Cloud. Para resolver: No Google AI Studio, clique em 'Chaves de API' e gere em um novo projeto.",
+          };
+        }
+        if (errorReason === "API_KEY_INVALID" || rawMessage.includes("API key not valid")) {
+          return {
+            success: false,
+            message:
+              "Chave inválida (API_KEY_INVALID). Verifique se copiou todos os caracteres da chave gerada no Google AI Studio.",
+          };
+        }
+      } else {
+        const listData = await listRes.json();
+        if (Array.isArray(listData?.models)) {
+          availableModels = listData.models
+            .filter((m: any) =>
+              Array.isArray(m.supportedGenerationMethods) &&
+              m.supportedGenerationMethods.includes("generateContent")
+            )
+            .map((m: any) => m.name.replace(/^models\//, ""));
+        }
+      }
+    } catch (listErr: any) {
+      console.warn("Consulta à lista de modelos falhou, recorrendo a candidatos padrão:", listErr?.message);
+    }
+
+    // 2. Monta lista ordenada de candidatos para o teste
+    const cleanRequested = (model || "").replace(/^models\//, "");
+    const candidateModels: string[] = [];
+
+    if (cleanRequested && cleanRequested !== "gemini-2.0-flash") {
+      candidateModels.push(cleanRequested);
+    }
+
+    const fallbackList = [
+      "gemini-1.5-flash",
+      "gemini-2.5-flash",
+      "gemini-1.5-pro",
+      "gemini-2.5-pro",
+    ];
+
+    for (const f of fallbackList) {
+      if (!candidateModels.includes(f)) {
+        candidateModels.push(f);
+      }
+    }
+
+    // Se temos a lista dinâmica da API do Google, prioriza os modelos confirmados
+    if (availableModels.length > 0) {
+      candidateModels.sort((a, b) => {
+        const aIn = availableModels.includes(a);
+        const bIn = availableModels.includes(b);
+        if (aIn && !bIn) return -1;
+        if (!aIn && bIn) return 1;
+        return 0;
+      });
+    }
+
+    // 3. Executa o teste de geração com o primeiro modelo funcional
+    let lastErrorMsg = "";
+    for (const targetModel of candidateModels) {
+      try {
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/${targetModel}:generateContent?key=${cleanKey}`;
+        const res = await fetch(url, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            contents: [{ role: "user", parts: [{ text: "Responda apenas: OK" }] }],
+            generationConfig: { temperature: 0.1 },
+          }),
+          signal: controller.signal,
+        });
+
+        if (res.ok) {
+          const data = await res.json();
+          const reply = data?.candidates?.[0]?.content?.parts?.[0]?.text || "OK";
+          clearTimeout(timeoutId);
+          return {
+            success: true,
+            message: `Conexão bem-sucedida! O modelo ${targetModel} respondeu em tempo real: "${reply.trim()}". Salve as configurações para ativar para todos os alunos.`,
+            activeModel: targetModel as GeminiModelId,
+          };
+        }
+
+        const errText = await res.text();
+        lastErrorMsg = errText;
+      } catch (callErr: any) {
+        lastErrorMsg = callErr?.message || "Erro desconhecido";
       }
     }
 
     clearTimeout(timeoutId);
 
-    if (res.ok) {
-      const data = await res.json();
-      const reply = data?.candidates?.[0]?.content?.parts?.[0]?.text || "OK";
-      return {
-        success: true,
-        message: `Conexão bem-sucedida! O modelo ${testedModel} respondeu em tempo real: "${reply.trim()}". Salve as configurações para ativar para todos os alunos.`,
-      };
-    }
-
-    // Tratamento de erro detalhado do Google
-    const errText = await res.text();
+    // Tratamento de mensagens de erro específicas
     let errJson: any = null;
-    try {
-      errJson = JSON.parse(errText);
-    } catch {}
-
-    const errorCode = errJson?.error?.code || res.status;
+    try { errJson = JSON.parse(lastErrorMsg); } catch {}
+    const errorCode = errJson?.error?.code || 400;
     const errorStatus = errJson?.error?.status || "";
-    const errorDetails = errJson?.error?.details?.[0];
-    const errorReason = errorDetails?.reason || "";
-    const rawMessage = errJson?.error?.message || errText;
-
-    if (errorReason === "API_KEY_SERVICE_BLOCKED" || rawMessage.includes("blocked")) {
-      return {
-        success: false,
-        message:
-          "Chave bloqueada pelo Google (API_KEY_SERVICE_BLOCKED). Essa chave é a do Firebase e tem restrições de serviço no Google Cloud. Para resolver: No Google AI Studio, clique em 'Chaves de API' no menu esquerdo e clique em 'Criar chave de API em um novo projeto'. A nova chave funcionará de imediato!",
-      };
-    }
-
-    if (errorReason === "API_KEY_INVALID" || rawMessage.includes("API key not valid")) {
-      return {
-        success: false,
-        message:
-          "Chave inválida (API_KEY_INVALID). Verifique se copiou todos os caracteres da chave gerada no Google AI Studio.",
-      };
-    }
-
-    if (errorCode === 404 && rawMessage.includes("no longer available")) {
-      return {
-        success: false,
-        message: `O Google informou que o modelo anterior foi descontinuado e substituído pelo Gemini 2.5 Flash. Atualize a seleção de modelo para "Gemini 2.5 Flash" e teste novamente.`,
-      };
-    }
+    const rawMessage = errJson?.error?.message || lastErrorMsg;
 
     return {
       success: false,
