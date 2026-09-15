@@ -73,7 +73,8 @@ export async function getEffectiveApiKey(): Promise<string> {
 }
 
 /**
- * Executa requisição direta à API REST do Google Gemini com fallback em cascata
+ * Executa requisição direta à API REST do Google Gemini
+ * Timeout ágil de 6 segundos com fallback instantâneo caso o modelo retorne 404
  */
 export async function callGeminiRest(
   apiKey: string,
@@ -83,68 +84,63 @@ export async function callGeminiRest(
   temperature: number = 0.7,
   jsonMode: boolean = false
 ): Promise<string | null> {
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 14000);
-
   const cleanRequested = (model || "").replace(/^models\//, "");
-  const candidateModels = [
-    cleanRequested && cleanRequested !== "gemini-2.0-flash" ? cleanRequested : "gemini-1.5-flash",
-    "gemini-1.5-flash",
-    "gemini-2.5-flash",
-    "gemini-1.5-pro",
-  ].filter((m, i, arr) => arr.indexOf(m) === i);
+  const primaryModel =
+    cleanRequested && cleanRequested !== "gemini-2.0-flash" ? cleanRequested : "gemini-1.5-flash";
 
-  const executeRequest = async (targetModel: string): Promise<string | null> => {
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/${targetModel}:generateContent?key=${apiKey}`;
-    const body: any = {
-      contents,
-      system_instruction: {
-        parts: [{ text: systemInstruction }],
-      },
-      generationConfig: {
-        temperature,
-        ...(jsonMode ? { responseMimeType: "application/json" } : {}),
-      },
-    };
+  const executeSingle = async (mod: string, timeoutMs: number): Promise<string | null> => {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/${mod}:generateContent?key=${apiKey}`;
+      const body: any = {
+        contents,
+        system_instruction: { parts: [{ text: systemInstruction }] },
+        generationConfig: {
+          temperature,
+          ...(jsonMode ? { responseMimeType: "application/json" } : {}),
+        },
+      };
 
-    const res = await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-      signal: controller.signal,
-    });
+      const res = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+        signal: controller.signal,
+      });
 
-    if (!res.ok) {
-      const errText = await res.text();
-      console.warn(`Gemini API (${targetModel}) retornou status ${res.status}:`, errText);
+      clearTimeout(timer);
+      if (!res.ok) {
+        console.warn(`Gemini (${mod}) retornou status HTTP ${res.status}`);
+        return null;
+      }
+
+      const data = await res.json();
+      const reply = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+      return reply ? reply.trim() : null;
+    } catch {
+      clearTimeout(timer);
       return null;
     }
-
-    const data = await res.json();
-    const reply = data?.candidates?.[0]?.content?.parts?.[0]?.text;
-    return reply ? reply.trim() : null;
   };
 
-  try {
-    for (const targetModel of candidateModels) {
-      const result = await executeRequest(targetModel);
-      if (result) {
-        clearTimeout(timeoutId);
-        return result;
-      }
-    }
-    clearTimeout(timeoutId);
-    return null;
-  } catch (err: any) {
-    clearTimeout(timeoutId);
-    console.warn("Falha ou timeout ao consultar Gemini REST:", err.message);
-    return null;
+  // 1. Tenta o modelo principal configurado (6 segundos)
+  const primaryRes = await executeSingle(primaryModel, 6000);
+  if (primaryRes) return primaryRes;
+
+  // 2. Se falhar ou der 404, e o modelo não era 1.5-flash, tenta o fallback padrão universal (5 segundos)
+  if (primaryModel !== "gemini-1.5-flash") {
+    console.warn(`Tentando fallback com gemini-1.5-flash...`);
+    const fallbackRes = await executeSingle("gemini-1.5-flash", 5000);
+    if (fallbackRes) return fallbackRes;
   }
+
+  return null;
 }
 
 /**
- * Testa a conexão da Chave de API e do Modelo diretamente no Admin.
- * Valida a chave em tempo real na API do Google e descobre os modelos suportados.
+ * Testa a conexão da Chave de API e do Modelo diretamente no Admin
+ * Executa uma requisição ultra-rápida (timeout 5s) sem loops longos.
  */
 export async function testGeminiConnection(
   apiKey: string,
@@ -155,139 +151,91 @@ export async function testGeminiConnection(
     return { success: false, message: "A chave de API não foi informada." };
   }
 
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 12000);
+  const cleanRequested = (model || "").replace(/^models\//, "");
+  const targetModel =
+    cleanRequested && cleanRequested !== "gemini-2.0-flash" ? cleanRequested : "gemini-1.5-flash";
 
-  try {
-    // 1. Consulta modelos disponíveis diretamente na conta do usuário no Google AI Studio
-    let availableModels: string[] = [];
+  const executeTest = async (mod: string, timeoutMs: number = 5000) => {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+
     try {
-      const listRes = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models?key=${cleanKey}`,
-        { signal: controller.signal }
-      );
-
-      if (!listRes.ok) {
-        const errText = await listRes.text();
-        let errJson: any = null;
-        try { errJson = JSON.parse(errText); } catch {}
-        const errorReason = errJson?.error?.details?.[0]?.reason || "";
-        const rawMessage = errJson?.error?.message || errText;
-
-        if (errorReason === "API_KEY_SERVICE_BLOCKED" || rawMessage.includes("blocked")) {
-          return {
-            success: false,
-            message:
-              "Chave bloqueada pelo Google (API_KEY_SERVICE_BLOCKED). Essa chave é a do Firebase e tem restrições de serviço no Google Cloud. Para resolver: No Google AI Studio, clique em 'Chaves de API' e gere em um novo projeto.",
-          };
-        }
-        if (errorReason === "API_KEY_INVALID" || rawMessage.includes("API key not valid")) {
-          return {
-            success: false,
-            message:
-              "Chave inválida (API_KEY_INVALID). Verifique se copiou todos os caracteres da chave gerada no Google AI Studio.",
-          };
-        }
-      } else {
-        const listData = await listRes.json();
-        if (Array.isArray(listData?.models)) {
-          availableModels = listData.models
-            .filter((m: any) =>
-              Array.isArray(m.supportedGenerationMethods) &&
-              m.supportedGenerationMethods.includes("generateContent")
-            )
-            .map((m: any) => m.name.replace(/^models\//, ""));
-        }
-      }
-    } catch (listErr: any) {
-      console.warn("Consulta à lista de modelos falhou, recorrendo a candidatos padrão:", listErr?.message);
-    }
-
-    // 2. Monta lista ordenada de candidatos para o teste
-    const cleanRequested = (model || "").replace(/^models\//, "");
-    const candidateModels: string[] = [];
-
-    if (cleanRequested && cleanRequested !== "gemini-2.0-flash") {
-      candidateModels.push(cleanRequested);
-    }
-
-    const fallbackList = [
-      "gemini-1.5-flash",
-      "gemini-2.5-flash",
-      "gemini-1.5-pro",
-      "gemini-2.5-pro",
-    ];
-
-    for (const f of fallbackList) {
-      if (!candidateModels.includes(f)) {
-        candidateModels.push(f);
-      }
-    }
-
-    // Se temos a lista dinâmica da API do Google, prioriza os modelos confirmados
-    if (availableModels.length > 0) {
-      candidateModels.sort((a, b) => {
-        const aIn = availableModels.includes(a);
-        const bIn = availableModels.includes(b);
-        if (aIn && !bIn) return -1;
-        if (!aIn && bIn) return 1;
-        return 0;
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/${mod}:generateContent?key=${cleanKey}`;
+      const res = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          contents: [{ role: "user", parts: [{ text: "Responda apenas: OK" }] }],
+          generationConfig: { temperature: 0.1 },
+        }),
+        signal: controller.signal,
       });
+
+      clearTimeout(timer);
+      const text = await res.text();
+      let json: any = null;
+      try { json = JSON.parse(text); } catch {}
+      return { ok: res.ok, status: res.status, text, json };
+    } catch (err: any) {
+      clearTimeout(timer);
+      return { ok: false, status: 0, text: err?.message || "Timeout de rede", json: null };
     }
+  };
 
-    // 3. Executa o teste de geração com o primeiro modelo funcional
-    let lastErrorMsg = "";
-    for (const targetModel of candidateModels) {
-      try {
-        const url = `https://generativelanguage.googleapis.com/v1beta/models/${targetModel}:generateContent?key=${cleanKey}`;
-        const res = await fetch(url, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            contents: [{ role: "user", parts: [{ text: "Responda apenas: OK" }] }],
-            generationConfig: { temperature: 0.1 },
-          }),
-          signal: controller.signal,
-        });
+  // 1. Tenta o modelo selecionado pelo usuário (5 segundos)
+  let testResult = await executeTest(targetModel, 5000);
+  let resolvedModel = targetModel;
 
-        if (res.ok) {
-          const data = await res.json();
-          const reply = data?.candidates?.[0]?.content?.parts?.[0]?.text || "OK";
-          clearTimeout(timeoutId);
-          return {
-            success: true,
-            message: `Conexão bem-sucedida! O modelo ${targetModel} respondeu em tempo real: "${reply.trim()}". Salve as configurações para ativar para todos os alunos.`,
-            activeModel: targetModel as GeminiModelId,
-          };
-        }
-
-        const errText = await res.text();
-        lastErrorMsg = errText;
-      } catch (callErr: any) {
-        lastErrorMsg = callErr?.message || "Erro desconhecido";
-      }
+  // 2. Se retornar 404 (modelo descontinuado ou indisponível na conta), tenta automaticamente gemini-1.5-flash
+  if (!testResult.ok && testResult.status === 404 && targetModel !== "gemini-1.5-flash") {
+    const fallbackResult = await executeTest("gemini-1.5-flash", 5000);
+    if (fallbackResult.ok) {
+      testResult = fallbackResult;
+      resolvedModel = "gemini-1.5-flash";
     }
+  }
 
-    clearTimeout(timeoutId);
-
-    // Tratamento de mensagens de erro específicas
-    let errJson: any = null;
-    try { errJson = JSON.parse(lastErrorMsg); } catch {}
-    const errorCode = errJson?.error?.code || 400;
-    const errorStatus = errJson?.error?.status || "";
-    const rawMessage = errJson?.error?.message || lastErrorMsg;
-
+  // 3. Avalia o resultado
+  if (testResult.ok) {
+    const reply = testResult.json?.candidates?.[0]?.content?.parts?.[0]?.text || "OK";
     return {
-      success: false,
-      message: `Erro retornado pelo Google (${errorCode} - ${errorStatus}): ${rawMessage.slice(0, 200)}`,
-    };
-  } catch (err: any) {
-    clearTimeout(timeoutId);
-    return {
-      success: false,
-      message: `Falha na requisição: ${err?.message || "Timeout ou falha de rede"}`,
+      success: true,
+      message: `Conexão bem-sucedida! O modelo ${resolvedModel} respondeu em tempo real: "${reply.trim()}". Salve as configurações para ativar para todos os alunos.`,
+      activeModel: resolvedModel as GeminiModelId,
     };
   }
+
+  // Tratamento de mensagens de erro específicas do Google
+  const errorReason = testResult.json?.error?.details?.[0]?.reason || "";
+  const rawMessage = testResult.json?.error?.message || testResult.text;
+
+  if (errorReason === "API_KEY_SERVICE_BLOCKED" || rawMessage.includes("blocked")) {
+    return {
+      success: false,
+      message:
+        "Chave bloqueada pelo Google (API_KEY_SERVICE_BLOCKED). Essa chave é a do Firebase e tem restrições de serviço no Google Cloud. Para resolver: No Google AI Studio, clique em 'Chaves de API' no menu esquerdo e clique em 'Criar chave de API em um novo projeto'. A nova chave funcionará de imediato!",
+    };
+  }
+
+  if (errorReason === "API_KEY_INVALID" || rawMessage.includes("API key not valid")) {
+    return {
+      success: false,
+      message:
+        "Chave inválida (API_KEY_INVALID). Verifique se copiou todos os caracteres da chave gerada no Google AI Studio.",
+    };
+  }
+
+  if (testResult.status === 0) {
+    return {
+      success: false,
+      message: "Tempo limite de conexão excedido (5s). Verifique sua conexão com a internet ou bloqueadores de extensões no navegador.",
+    };
+  }
+
+  return {
+    success: false,
+    message: `Erro retornado pelo Google (${testResult.status}): ${rawMessage.slice(0, 200)}`,
+  };
 }
 
 /**
