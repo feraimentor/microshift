@@ -137,35 +137,84 @@ export async function callGeminiRest(
 
 /**
  * Testa a conexão da Chave de API e do Modelo diretamente no Admin
+ * Retorna diagnósticos precisos em caso de bloqueio ou erro do Google Cloud.
  */
 export async function testGeminiConnection(
   apiKey: string,
   model: GeminiModelId = "gemini-2.0-flash"
 ): Promise<{ success: boolean; message: string }> {
-  if (!apiKey || !apiKey.trim()) {
+  const cleanKey = apiKey.trim();
+  if (!cleanKey) {
     return { success: false, message: "A chave de API não foi informada." };
   }
 
-  try {
-    const reply = await callGeminiRest(
-      apiKey.trim(),
-      [{ role: "user", parts: [{ text: "Responda apenas com: Conexão bem-sucedida com o Gemini." }] }],
-      "Você é um verificador de conectividade. Seja breve.",
-      model,
-      0.1
-    );
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 10000);
 
-    if (reply && reply.length > 0) {
-      return { success: true, message: `Conexão bem-sucedida! O modelo ${model} respondeu: "${reply}"` };
+  try {
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${cleanKey}`;
+    const body = {
+      contents: [{ role: "user", parts: [{ text: "Responda apenas: OK" }] }],
+      generationConfig: { temperature: 0.1 },
+    };
+
+    const res = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+      signal: controller.signal,
+    });
+
+    clearTimeout(timeoutId);
+
+    if (res.ok) {
+      const data = await res.json();
+      const reply = data?.candidates?.[0]?.content?.parts?.[0]?.text || "OK";
+      return {
+        success: true,
+        message: `Conexão bem-sucedida! O modelo ${model} respondeu em tempo real: "${reply.trim()}". Salve as configurações para ativar para todos os alunos.`,
+      };
+    }
+
+    // Tratamento de erro detalhado do Google
+    const errText = await res.text();
+    let errJson: any = null;
+    try {
+      errJson = JSON.parse(errText);
+    } catch {}
+
+    const errorCode = errJson?.error?.code || res.status;
+    const errorStatus = errJson?.error?.status || "";
+    const errorDetails = errJson?.error?.details?.[0];
+    const errorReason = errorDetails?.reason || "";
+    const rawMessage = errJson?.error?.message || errText;
+
+    if (errorReason === "API_KEY_SERVICE_BLOCKED" || rawMessage.includes("blocked")) {
+      return {
+        success: false,
+        message:
+          "Chave bloqueada pelo Google (API_KEY_SERVICE_BLOCKED). Essa chave é a do Firebase e tem restrições de serviço no Google Cloud. Para resolver: No Google AI Studio, clique em 'Chaves de API' no menu esquerdo e clique em 'Criar chave de API em um novo projeto'. A nova chave funcionará de imediato!",
+      };
+    }
+
+    if (errorReason === "API_KEY_INVALID" || rawMessage.includes("API key not valid")) {
+      return {
+        success: false,
+        message:
+          "Chave inválida (API_KEY_INVALID). Verifique se copiou todos os caracteres da chave gerada no Google AI Studio.",
+      };
     }
 
     return {
       success: false,
-      message:
-        "Não foi possível obter resposta. Verifique se a chave do Google AI Studio está ativa e sem restrições de IP/serviço.",
+      message: `Erro retornado pelo Google (${errorCode} - ${errorStatus}): ${rawMessage.slice(0, 200)}`,
     };
   } catch (err: any) {
-    return { success: false, message: `Erro ao testar conexão: ${err?.message || "Erro desconhecido"}` };
+    clearTimeout(timeoutId);
+    return {
+      success: false,
+      message: `Falha na requisição: ${err?.message || "Timeout ou falha de rede"}`,
+    };
   }
 }
 
