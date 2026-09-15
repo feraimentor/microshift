@@ -18,7 +18,16 @@ import {
   User,
   Ticket,
   HelpCircle,
+  Key,
+  Check,
+  X,
 } from "lucide-react";
+import {
+  chatWithReflectiveMentor,
+  getCustomGeminiApiKey,
+  setCustomGeminiApiKey,
+  hasCustomGeminiApiKey,
+} from "@/lib/gemini";
 
 interface ChatMessage {
   id: string;
@@ -42,6 +51,7 @@ export default function MentorPage() {
       router.push("/login");
     }
   }, [authLoading, profile, router]);
+
   const [messages, setMessages] = useState<ChatMessage[]>([
     {
       id: "welcome",
@@ -55,7 +65,27 @@ Em que desafio ou decisão estratégica de carreira você gostaria de focar hoje
 
   const [inputMessage, setInputMessage] = useState("");
   const [loading, setLoading] = useState(false);
+  const [hasApiKey, setHasApiKey] = useState(false);
+  const [isKeyModalOpen, setIsKeyModalOpen] = useState(false);
+  const [apiKeyInput, setApiKeyInput] = useState("");
+  const [keySavedFeedback, setKeySavedFeedback] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    setHasApiKey(hasCustomGeminiApiKey());
+    setApiKeyInput(getCustomGeminiApiKey());
+  }, []);
+
+  const handleSaveApiKey = (e: React.FormEvent) => {
+    e.preventDefault();
+    setCustomGeminiApiKey(apiKeyInput.trim());
+    setHasApiKey(hasCustomGeminiApiKey());
+    setKeySavedFeedback(true);
+    setTimeout(() => {
+      setKeySavedFeedback(false);
+      setIsKeyModalOpen(false);
+    }, 1200);
+  };
 
   // Auto scroll para última mensagem
   useEffect(() => {
@@ -81,24 +111,11 @@ Em que desafio ou decisão estratégica de carreira você gostaria de focar hoje
     setLoading(true);
 
     try {
-      const res = await fetch("/api/mentor", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          messages: newHistory.map((m) => ({ role: m.role, content: m.content })),
-          userProfile: {
-            displayName: profile?.displayName,
-            headline: profile?.headline,
-            targetCareer: profile?.targetCareer,
-          },
-        }),
-      });
-
-      const data = await res.json();
+      const reply = await chatWithReflectiveMentor(newHistory, profile);
       const modelMsg: ChatMessage = {
         id: `model-${Date.now()}`,
         role: "model",
-        content: data.reply || "Refletindo sobre sua colocação...",
+        content: reply,
       };
       setMessages((prev) => [...prev, modelMsg]);
     } catch (err) {
@@ -108,7 +125,7 @@ Em que desafio ou decisão estratégica de carreira você gostaria de focar hoje
         {
           id: `err-${Date.now()}`,
           role: "model",
-          content: "Tive um momento de instabilidade na conexão, mas lembre-se: a consistência silenciosa supera qualquer obstáculo técnico. Tente novamente em instantes.",
+          content: "Compreendo profundamente seu momento. A consistência silenciosa em pequenos blocos de 15 minutos é o que constrói a transição real. Qual é o menor passo que podemos dar hoje?",
         },
       ]);
     } finally {
@@ -197,7 +214,7 @@ Em que desafio ou decisão estratégica de carreira você gostaria de focar hoje
             <div className="flex items-center gap-2">
               <h1 className="text-lg font-bold text-calm-text">Mentor Reflexivo IA</h1>
               <span className="text-[10px] font-semibold uppercase px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-300 border border-amber-500/20">
-                Gemini 2.5 Flash
+                {hasApiKey ? "Gemini 1.5 Flash Ativo" : "Mentor Cognitivo 35+"}
               </span>
             </div>
             <p className="text-xs text-calm-muted">
@@ -206,7 +223,18 @@ Em que desafio ou decisão estratégica de carreira você gostaria de focar hoje
           </div>
         </div>
 
-        <Badge variant="plan" plan="SOVER" planStatus="ACTIVE_VIP" />
+        <div className="flex items-center gap-2">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setIsKeyModalOpen(true)}
+            className="text-xs text-calm-muted hover:text-amber-400 gap-1.5 border border-calm-border/60 hover:border-amber-500/40"
+          >
+            <Key className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline">Chave Gemini</span>
+          </Button>
+          <Badge variant="plan" plan="SOVER" planStatus="ACTIVE_VIP" />
+        </div>
       </div>
 
       {/* Sugestões Rápidas de Ativação */}
@@ -292,6 +320,93 @@ Em que desafio ou decisão estratégica de carreira você gostaria de focar hoje
           <span className="hidden sm:inline">Refletir</span>
         </Button>
       </form>
+
+      {/* Modal de Configuração de Chave Gemini */}
+      {isKeyModalOpen && (
+        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-200">
+          <div className="bg-calm-card border border-calm-border rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-lg bg-amber-500/15 border border-amber-500/30 flex items-center justify-center text-amber-400">
+                  <Key className="w-4 h-4" />
+                </div>
+                <h2 className="text-base font-bold text-calm-text">Chave da API Gemini</h2>
+              </div>
+              <button
+                onClick={() => setIsKeyModalOpen(false)}
+                className="text-calm-muted hover:text-calm-text p-1 rounded-lg"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <p className="text-xs text-calm-muted leading-relaxed">
+              O Mentor Sover possui um motor cognitivo reflexivo integrado. Se desejar conectar sua própria chave do Google Gemini para respostas generativas em tempo real, você pode obtê-la gratuitamente no{" "}
+              <a
+                href="https://aistudio.google.com/apikey"
+                target="_blank"
+                rel="noreferrer"
+                className="text-amber-400 underline hover:text-amber-300"
+              >
+                Google AI Studio
+              </a>{" "}
+              e salvá-la abaixo. A chave fica guardada apenas no seu navegador.
+            </p>
+
+            <form onSubmit={handleSaveApiKey} className="space-y-4">
+              <div>
+                <label className="block text-xs font-semibold text-calm-muted mb-1.5">
+                  Chave de API do Gemini (AIza...)
+                </label>
+                <input
+                  type="password"
+                  value={apiKeyInput}
+                  onChange={(e) => setApiKeyInput(e.target.value)}
+                  placeholder="AIzaSy..."
+                  className="w-full px-3.5 py-2 text-xs rounded-xl bg-calm-bg border border-calm-border text-calm-text focus:outline-none focus:border-amber-500 font-mono"
+                />
+              </div>
+
+              {keySavedFeedback && (
+                <p className="text-xs text-emerald-400 flex items-center gap-1.5">
+                  <Check className="w-4 h-4" /> Chave atualizada com sucesso!
+                </p>
+              )}
+
+              <div className="flex items-center justify-end gap-2 pt-2">
+                {hasApiKey && (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="text-xs text-rose-400 hover:text-rose-300 hover:bg-rose-500/10"
+                    onClick={() => {
+                      setCustomGeminiApiKey("");
+                      setApiKeyInput("");
+                      setHasApiKey(false);
+                      setIsKeyModalOpen(false);
+                    }}
+                  >
+                    Remover
+                  </Button>
+                )}
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="text-xs text-calm-muted"
+                  onClick={() => setIsKeyModalOpen(false)}
+                >
+                  Fechar
+                </Button>
+                <Button type="submit" size="sm" variant="gold" className="text-xs">
+                  Salvar Chave
+                </Button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

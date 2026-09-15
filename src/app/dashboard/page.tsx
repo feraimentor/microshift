@@ -30,6 +30,7 @@ import {
 } from "lucide-react";
 import { HabitGoal } from "@/types";
 import { fetchUserGoals, createUserGoal, completeGoalToday, deleteUserGoal, getLocalGoals } from "@/lib/goals";
+import { generateRoadmapSteps } from "@/lib/gemini";
 
 export default function DashboardPage() {
   const router = useRouter();
@@ -61,21 +62,15 @@ export default function DashboardPage() {
   const [generatingAiRoadmap, setGeneratingAiRoadmap] = useState(false);
   const [generatedSteps, setGeneratedSteps] = useState<any[] | undefined>(undefined);
 
-  // Sugestão de meta com Gemini 2.5 Flash
+  // Sugestão de meta com Gemini
   const handleGenerateAiRoadmap = async () => {
     try {
       setGeneratingAiRoadmap(true);
       setGoalError(null);
-      const res = await fetch("/api/roadmap", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          targetCareer: profile?.targetCareer || "Liderança Executiva em Tecnologia",
-          currentRole: profile?.headline || "Profissional em Transição 35+",
-        }),
-      });
-      const data = await res.json();
-      if (data.title) {
+      const targetCareer = profile?.targetCareer || "Liderança Executiva em Tecnologia";
+      const currentRole = profile?.headline || "Profissional em Transição 35+";
+      const data = await generateRoadmapSteps(targetCareer, currentRole);
+      if (data && data.title) {
         setNewTitle(data.title);
         setNewCategory(data.category || "Hard Skill");
         setGeneratedSteps(data.steps);
