@@ -98,3 +98,20 @@ export interface MicrolearningLesson {
   order?: number;
   createdAt?: string;
 }
+
+export interface MentorChatMessage {
+  id: string;
+  role: "user" | "model";
+  content: string;
+  createdAt?: string;
+}
+
+export interface MentorChatSession {
+  id: string;
+  userId: string;
+  title: string;
+  messages: MentorChatMessage[];
+  createdAt: string;
+  updatedAt: string;
+}
+

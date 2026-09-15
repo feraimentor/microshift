@@ -87,19 +87,21 @@ async function callGeminiRest(
  */
 function generateReflectiveMentorResponse(
   userText: string,
-  userProfile?: any
+  userProfile?: any,
+  isFirstExchange: boolean = true
 ): string {
   const normalized = userText.toLowerCase().trim();
   const userName = userProfile?.displayName ? userProfile.displayName.split(" ")[0] : "Líder";
   const targetCareer = userProfile?.targetCareer || "sua área de foco";
+  const greeting = isFirstExchange ? `Olá, ${userName}. ` : "";
 
-  // 1. Dúvida sobre Tecnologia / IA conectada a Desenvolvimento Humano (exata pergunta do usuário)
+  // 1. Dúvida sobre Tecnologia / IA conectada a Desenvolvimento Humano
   if (
     (normalized.includes("desenvolvimento humano") || normalized.includes("humano") || normalized.includes("pessoas") || normalized.includes("psicologia") || normalized.includes("empatia")) &&
     (normalized.includes("tecnologia") || normalized.includes("ia") || normalized.includes("inteligência artificial") || normalized.includes("tech"))
   ) {
     return (
-      `Olá, ${userName}. Essa é exatamente uma das intersecções mais valorizadas e estratégicas da década.\n\n` +
+      `${greeting}Essa é exatamente uma das intersecções mais valorizadas e estratégicas da década.\n\n` +
       `Muitos profissionais cometem o equívoco de acreditar que a revolução da Inteligência Artificial é sobre código puro ou algoritmos. Na realidade executiva, **80% do sucesso na adoção de IA dentro das empresas depende de adaptação cultural, comportamento, liderança empática e facilitação humana**.\n\n` +
       `Ferramentas de IA são abundantes, mas quem compreende a mente, os receios e a dinâmica de pessoas é quem realmente lidera a transformação. Você pode se posicionar como a **ponte insubstituível** — em papéis como *Liderança de Produto Centrada no Humano*, *Estratégia de Adoção de IA* ou *Consultoria de Mudança Tecnológica Humanizada*.\n\n` +
       `Para o seu momento de reflexão hoje: **Qual é a maior dor ou resistência que você percebe nas pessoas ao seu redor quando o assunto é tecnologia, e como sua escuta sênior pode ser o remédio que nenhuma linha de código entrega?**`
@@ -116,7 +118,7 @@ function generateReflectiveMentorResponse(
     normalized.includes("teste")
   ) {
     return (
-      `Sim, ${userName}! A conexão com o Mentor Sover está 100% ativa, estável e operacional.\n\n` +
+      `${isFirstExchange ? `Sim, ${userName}! ` : `Perfeito! `}A conexão com o Mentor Sover está 100% ativa, estável e operacional.\n\n` +
       `Assim como na nossa metodologia de Calm Tech, oscilações passageiras de infraestrutura são resolvidas com consistência silenciosa e arquitetura sólida.\n\n` +
       `Estou pronto para aprofundar seu plano estratégico para ${targetCareer}. Em qual decisão ou desafio de carreira você gostaria de mergulhar agora?`
     );
@@ -133,7 +135,7 @@ function generateReflectiveMentorResponse(
     normalized.includes("tempo perdido")
   ) {
     return (
-      `Compreendo profundamente essa inquietação, ${userName}. Mas permita-me propor uma inversão de perspectiva:\n\n` +
+      `${greeting}Compreendo profundamente essa inquietação. Mas permita-me propor uma inversão de perspectiva:\n\n` +
       `Aos 35+ anos, você não está concorrendo com quem tem 22 anos em memorização de tutoriais. Você concorre com base em **maturidade emocional, capacidade de navegar em ambiguidades, negociação e foco em resultado de negócio** — habilidades que levam anos para serem forjadas e que a juventude técnica simplesmente ainda não teve tempo de adquirir.\n\n` +
       `O segredo não é tentar ser um novato acelerado, mas sim um profissional sênior que aprendeu a pilotar as ferramentas contemporâneas com a calma de quem já resolveu crises reais.\n\n` +
       `**Que competência da sua história anterior você considera que mais gera segurança para quem trabalha ao seu lado?**`
@@ -150,7 +152,7 @@ function generateReflectiveMentorResponse(
     normalized.includes("ansiedad")
   ) {
     return (
-      `${userName}, a sensação de ser um impostor é, paradoxalmente, um sintoma comum de quem tem alto padrão de qualidade e responsabilidade.\n\n` +
+      `${greeting}A sensação de ser um impostor é, paradoxalmente, um sintoma comum de quem tem alto padrão de qualidade e responsabilidade.\n\n` +
       `Na transição para tecnologia e novas metodologias, é natural se sentir vulnerável ao lidar com novos termos todos os dias. Porém, diferencie a ignorância técnica momentânea da falta de capacidade intelectual. Conceitos técnicos se aprendem com blocos de 15 minutos; caráter e solidez profissional já estão com você.\n\n` +
       `**Se você tirasse o peso de precisar dominar tudo hoje, qual é o único conceito simples que faria seu dia valer a pena se você o compreendesse agora?**`
     );
@@ -166,7 +168,7 @@ function generateReflectiveMentorResponse(
     normalized.includes("muita coisa")
   ) {
     return (
-      `${userName}, o princípio fundamental do MicroShift é: **a consistência silenciosa supera o esforço heróico**.\n\n` +
+      `${greeting}O princípio fundamental do MicroShift é: **a consistência silenciosa supera o esforço heróico**.\n\n` +
       `Quem tenta estudar 3 horas por noite após um dia exaustivo entra em colapso em menos de duas semanas. Por outro lado, 15 minutos focados todos os dias somam mais de 90 horas líquidas de aprendizado deliberado em um ano.\n\n` +
       `Nos dias em que a energia estiver baixa, ative o *Modo Dia Difícil* (apenas 2 minutos). Não quebre a ofensiva. A identidade de quem não desiste vale mais do que a quantidade de conteúdo absorvido em um único dia.\n\n` +
       `**Qual horário do seu dia pertence exclusivamente a você, sem notificações ou interrupções?**`
@@ -184,7 +186,7 @@ function generateReflectiveMentorResponse(
     normalized.includes("mercado")
   ) {
     return (
-      `${userName}, o maior erro de profissionais experientes em entrevistas de transição é pedir desculpas pela bagagem anterior ou tentar se rebaixar a iniciante.\n\n` +
+      `${greeting}O maior erro de profissionais experientes em entrevistas de transição é pedir desculpas pela bagagem anterior ou tentar se rebaixar a iniciante.\n\n` +
       `O recrutador e o gestor precisam ouvir uma **narrativa integradora**: "Passei anos liderando projetos e pessoas com rigor orçamentário e humano; hoje integro a IA e a tecnologia para multiplicar essa capacidade por dez."\n\n` +
       `Utilize a metodologia STAR (Situação, Tarefa, Ação, Resultado) enfatizando o impacto financeiro ou operacional que você causou no passado.\n\n` +
       `**Qual foi o projeto ou desafio mais complexo que você já superou, e que mostra claramente seu calibre como solucionador de problemas?**`
@@ -193,7 +195,7 @@ function generateReflectiveMentorResponse(
 
   // Fallback reflexivo geral socrático de alto nível
   return (
-    `Olá, ${userName}. Refletindo com calma sobre o que você trouxe: "${userText}".\n\n` +
+    `${greeting}Refletindo com calma sobre o que você trouxe: "${userText}".\n\n` +
     `Na nossa jornada para ${targetCareer}, cada dúvida que surge é um indicador claro de que você está expandindo sua zona de competência.\n\n` +
     `A liderança madura não busca respostas prontas e superficiais, mas sim a clareza sobre qual é a pergunta correta a fazer antes de dar o próximo passo.\n\n` +
     `**Olhando para a sua semana atual, o que está sob seu controle direto para mover o ponteiro da sua carreira sem gerar sobrecarga?**`
@@ -210,10 +212,23 @@ export async function chatWithReflectiveMentor(
   const lastUserMsg = [...messages].reverse().find((m) => m.role === "user")?.content || "";
   const apiKey = getCustomGeminiApiKey();
 
+  // Determina se é a primeira mensagem do usuário nesta conversa
+  const userMessagesCount = messages.filter((m) => m.role === "user").length;
+  const isFirstExchange = userMessagesCount <= 1;
+
   // Se houver uma chave da API do Gemini configurada, tenta usar primeiro a IA do Google
   if (apiKey) {
+    const firstName = userProfile?.displayName ? userProfile.displayName.split(" ")[0] : "Profissional";
+    const greetingDirective = isFirstExchange
+      ? `Esta é a primeira mensagem da conversa. Você pode iniciar com uma saudação breve e acolhedora pelo primeiro nome do usuário (${firstName}).`
+      : `ESTA CONVERSA JÁ ESTÁ EM ANDAMENTO. JAMAIS use saudações como "Olá ${firstName}", "Bom dia", "Olá novamente" ou cumprimentos repetidos. Vá direto ao ponto, respondendo como um mentor sênior conversando naturalmente em um café, com diálogo humano, empático, direto e fluído. Não seja robótico.`;
+
     const systemInstruction = `Você é o Mentor Reflexivo Sover da plataforma MicroShift.
 Seu público-alvo são profissionais com mais de 35 anos que estão em transição de carreira ou buscando atualização para tecnologia e liderança ágil.
+
+DIRETRIZ CRÍTICA DE TOM E DIÁLOGO:
+${greetingDirective}
+
 Diretrizes:
 1. Jamais seja condescendente ou use clichês vazios.
 2. Ajude o profissional a ver sua bagagem prévia como diferencial competitivo (desenvolvimento humano, maturidade, visão sistêmica).
@@ -233,7 +248,7 @@ Contexto do aluno: Nome: ${userProfile?.displayName || "Profissional"}, Cargo/Fo
   }
 
   // Se não houver chave ou se a API retornar erro, aciona o Motor Cognitivo Reflexivo
-  return generateReflectiveMentorResponse(lastUserMsg, userProfile);
+  return generateReflectiveMentorResponse(lastUserMsg, userProfile, isFirstExchange);
 }
 
 /**
