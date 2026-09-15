@@ -1,11 +1,23 @@
 /**
  * Motor de Inteligência e Mentoria Reflexiva Sover (35+)
- * Suporta Gemini API direta (REST) com chave personalizada ou pública,
- * e conta com Motor Cognitivo Reflexivo de alta precisão resiliente a falhas.
+ * Suporta Gemini 2.0 Flash / 1.5 Pro com RAG (Base de Conhecimento),
+ * Conectores MCP e Treinamento Comportamental Dinâmico editável pelo Admin.
  */
+
+import { GeminiModelId } from "@/types";
+import {
+  fetchMentorAiConfig,
+  getLocalMentorAiConfig,
+  fetchKnowledgeBase,
+  findRelevantKnowledge,
+  fetchMcpServers,
+} from "./mentor-config";
 
 const LOCAL_GEMINI_KEY = "microshift_gemini_api_key";
 
+/**
+ * Obtém a chave individual cadastrada pelo usuário no navegador
+ */
 export function getCustomGeminiApiKey(): string {
   if (typeof window !== "undefined") {
     try {
@@ -16,6 +28,9 @@ export function getCustomGeminiApiKey(): string {
   return process.env.NEXT_PUBLIC_GEMINI_API_KEY || process.env.GEMINI_API_KEY || "";
 }
 
+/**
+ * Define a chave individual cadastrada pelo usuário no navegador
+ */
 export function setCustomGeminiApiKey(key: string): void {
   if (typeof window === "undefined") return;
   try {
@@ -32,26 +47,53 @@ export function hasCustomGeminiApiKey(): boolean {
 }
 
 /**
- * Executa requisição direta à API REST do Google Gemini (gemini-1.5-flash)
+ * Obtém a chave efetiva com prioridade:
+ * 1. Chave Master da Plataforma configurada pelo Super Admin
+ * 2. Chave salva pelo usuário localmente
+ * 3. Variáveis de ambiente
  */
-async function callGeminiRest(
+export async function getEffectiveApiKey(): Promise<string> {
+  try {
+    const config = await fetchMentorAiConfig();
+    if (config.apiKey && config.apiKey.trim()) {
+      return config.apiKey.trim();
+    }
+  } catch {}
+
+  const userKey = getCustomGeminiApiKey();
+  if (userKey) return userKey;
+
+  const localConfig = getLocalMentorAiConfig();
+  if (localConfig.apiKey && localConfig.apiKey.trim()) {
+    return localConfig.apiKey.trim();
+  }
+
+  return "";
+}
+
+/**
+ * Executa requisição direta à API REST do Google Gemini
+ */
+export async function callGeminiRest(
   apiKey: string,
   contents: { role: string; parts: { text: string }[] }[],
   systemInstruction: string,
+  model: GeminiModelId = "gemini-2.0-flash",
+  temperature: number = 0.7,
   jsonMode: boolean = false
 ): Promise<string | null> {
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 8000);
+  const timeoutId = setTimeout(() => controller.abort(), 12000);
 
-  try {
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
+  const executeRequest = async (targetModel: string): Promise<string | null> => {
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${targetModel}:generateContent?key=${apiKey}`;
     const body: any = {
       contents,
-      systemInstruction: {
+      system_instruction: {
         parts: [{ text: systemInstruction }],
       },
       generationConfig: {
-        temperature: 0.7,
+        temperature,
         ...(jsonMode ? { responseMimeType: "application/json" } : {}),
       },
     };
@@ -63,17 +105,29 @@ async function callGeminiRest(
       signal: controller.signal,
     });
 
-    clearTimeout(timeoutId);
-
     if (!res.ok) {
       const errText = await res.text();
-      console.warn("Google Gemini API retornou status", res.status, errText);
+      console.warn(`Gemini API (${targetModel}) retornou status ${res.status}:`, errText);
       return null;
     }
 
     const data = await res.json();
     const reply = data?.candidates?.[0]?.content?.parts?.[0]?.text;
-    return reply || null;
+    return reply ? reply.trim() : null;
+  };
+
+  try {
+    // 1. Tenta o modelo principal escolhido
+    let result = await executeRequest(model);
+
+    // 2. Fallback de resiliência caso o modelo principal dê 404 ou erro
+    if (!result && model !== "gemini-1.5-flash") {
+      console.warn(`Tentando fallback com gemini-1.5-flash...`);
+      result = await executeRequest("gemini-1.5-flash");
+    }
+
+    clearTimeout(timeoutId);
+    return result;
   } catch (err: any) {
     clearTimeout(timeoutId);
     console.warn("Falha ou timeout ao consultar Gemini REST:", err.message);
@@ -82,8 +136,42 @@ async function callGeminiRest(
 }
 
 /**
- * Motor Cognitivo de Mentoria Reflexiva 35+
- * Especializado em desenvolvimento humano, transição tardia, Calm Tech e autoridade ágil.
+ * Testa a conexão da Chave de API e do Modelo diretamente no Admin
+ */
+export async function testGeminiConnection(
+  apiKey: string,
+  model: GeminiModelId = "gemini-2.0-flash"
+): Promise<{ success: boolean; message: string }> {
+  if (!apiKey || !apiKey.trim()) {
+    return { success: false, message: "A chave de API não foi informada." };
+  }
+
+  try {
+    const reply = await callGeminiRest(
+      apiKey.trim(),
+      [{ role: "user", parts: [{ text: "Responda apenas com: Conexão bem-sucedida com o Gemini." }] }],
+      "Você é um verificador de conectividade. Seja breve.",
+      model,
+      0.1
+    );
+
+    if (reply && reply.length > 0) {
+      return { success: true, message: `Conexão bem-sucedida! O modelo ${model} respondeu: "${reply}"` };
+    }
+
+    return {
+      success: false,
+      message:
+        "Não foi possível obter resposta. Verifique se a chave do Google AI Studio está ativa e sem restrições de IP/serviço.",
+    };
+  } catch (err: any) {
+    return { success: false, message: `Erro ao testar conexão: ${err?.message || "Erro desconhecido"}` };
+  }
+}
+
+/**
+ * Motor Cognitivo de Contingência Offline 35+
+ * Usado exclusivamente se o dispositivo estiver desconectado da internet.
  */
 function generateReflectiveMentorResponse(
   userText: string,
@@ -108,23 +196,7 @@ function generateReflectiveMentorResponse(
     );
   }
 
-  // 2. Pergunta sobre inconsistência / teste / estabilidade técnica
-  if (
-    normalized.includes("inconsistência") ||
-    normalized.includes("inconsistencia") ||
-    normalized.includes("instabilidade") ||
-    normalized.includes("melhorou") ||
-    normalized.includes("funcionando") ||
-    normalized.includes("teste")
-  ) {
-    return (
-      `${isFirstExchange ? `Sim, ${userName}! ` : `Perfeito! `}A conexão com o Mentor Sover está 100% ativa, estável e operacional.\n\n` +
-      `Assim como na nossa metodologia de Calm Tech, oscilações passageiras de infraestrutura são resolvidas com consistência silenciosa e arquitetura sólida.\n\n` +
-      `Estou pronto para aprofundar seu plano estratégico para ${targetCareer}. Em qual decisão ou desafio de carreira você gostaria de mergulhar agora?`
-    );
-  }
-
-  // 3. Transição de Carreira aos 35+, 40+ ou 50+
+  // 2. Transição de Carreira aos 35+, 40+ ou 50+
   if (
     normalized.includes("35") ||
     normalized.includes("40") ||
@@ -142,23 +214,7 @@ function generateReflectiveMentorResponse(
     );
   }
 
-  // 4. Síndrome do Impostor, Medo, Insegurança
-  if (
-    normalized.includes("impostor") ||
-    normalized.includes("insegur") ||
-    normalized.includes("medo") ||
-    normalized.includes("incapaz") ||
-    normalized.includes("não sei nada") ||
-    normalized.includes("ansiedad")
-  ) {
-    return (
-      `${greeting}A sensação de ser um impostor é, paradoxalmente, um sintoma comum de quem tem alto padrão de qualidade e responsabilidade.\n\n` +
-      `Na transição para tecnologia e novas metodologias, é natural se sentir vulnerável ao lidar com novos termos todos os dias. Porém, diferencie a ignorância técnica momentânea da falta de capacidade intelectual. Conceitos técnicos se aprendem com blocos de 15 minutos; caráter e solidez profissional já estão com você.\n\n` +
-      `**Se você tirasse o peso de precisar dominar tudo hoje, qual é o único conceito simples que faria seu dia valer a pena se você o compreendesse agora?**`
-    );
-  }
-
-  // 5. Gestão de Tempo, Sobrecarga, Cansaço
+  // 3. Gestão de Tempo, Sobrecarga, Cansaço
   if (
     normalized.includes("tempo") ||
     normalized.includes("cansa") ||
@@ -175,27 +231,9 @@ function generateReflectiveMentorResponse(
     );
   }
 
-  // 6. Entrevistas, Salário, LinkedIn, Posicionamento
-  if (
-    normalized.includes("entrevista") ||
-    normalized.includes("salário") ||
-    normalized.includes("linkedin") ||
-    normalized.includes("currículo") ||
-    normalized.includes("cv") ||
-    normalized.includes("vaga") ||
-    normalized.includes("mercado")
-  ) {
-    return (
-      `${greeting}O maior erro de profissionais experientes em entrevistas de transição é pedir desculpas pela bagagem anterior ou tentar se rebaixar a iniciante.\n\n` +
-      `O recrutador e o gestor precisam ouvir uma **narrativa integradora**: "Passei anos liderando projetos e pessoas com rigor orçamentário e humano; hoje integro a IA e a tecnologia para multiplicar essa capacidade por dez."\n\n` +
-      `Utilize a metodologia STAR (Situação, Tarefa, Ação, Resultado) enfatizando o impacto financeiro ou operacional que você causou no passado.\n\n` +
-      `**Qual foi o projeto ou desafio mais complexo que você já superou, e que mostra claramente seu calibre como solucionador de problemas?**`
-    );
-  }
-
-  // Fallback reflexivo geral socrático de alto nível
+  // Fallback geral contextualizado
   return (
-    `${greeting}Refletindo com calma sobre o que você trouxe: "${userText}".\n\n` +
+    `${greeting}Refletindo com você sobre: "${userText}".\n\n` +
     `Na nossa jornada para ${targetCareer}, cada dúvida que surge é um indicador claro de que você está expandindo sua zona de competência.\n\n` +
     `A liderança madura não busca respostas prontas e superficiais, mas sim a clareza sobre qual é a pergunta correta a fazer antes de dar o próximo passo.\n\n` +
     `**Olhando para a sua semana atual, o que está sob seu controle direto para mover o ponteiro da sua carreira sem gerar sobrecarga?**`
@@ -204,50 +242,88 @@ function generateReflectiveMentorResponse(
 
 /**
  * Função principal para conversar com o Mentor Reflexivo
+ * Suporta Gemini 2.0 Flash, RAG (Base de Conhecimento) e MCPs.
  */
 export async function chatWithReflectiveMentor(
   messages: { role: string; content: string }[],
   userProfile?: any
 ): Promise<string> {
   const lastUserMsg = [...messages].reverse().find((m) => m.role === "user")?.content || "";
-  const apiKey = getCustomGeminiApiKey();
+
+  // 1. Carrega as configurações do Agente salvas pelo Admin
+  const config = await fetchMentorAiConfig();
+  const apiKey = await getEffectiveApiKey();
 
   // Determina se é a primeira mensagem do usuário nesta conversa
   const userMessagesCount = messages.filter((m) => m.role === "user").length;
   const isFirstExchange = userMessagesCount <= 1;
 
-  // Se houver uma chave da API do Gemini configurada, tenta usar primeiro a IA do Google
+  // 2. Se houver chave ativa, monta o prompt com RAG e chama o Gemini
   if (apiKey) {
     const firstName = userProfile?.displayName ? userProfile.displayName.split(" ")[0] : "Profissional";
     const greetingDirective = isFirstExchange
-      ? `Esta é a primeira mensagem da conversa. Você pode iniciar com uma saudação breve e acolhedora pelo primeiro nome do usuário (${firstName}).`
-      : `ESTA CONVERSA JÁ ESTÁ EM ANDAMENTO. JAMAIS use saudações como "Olá ${firstName}", "Bom dia", "Olá novamente" ou cumprimentos repetidos. Vá direto ao ponto, respondendo como um mentor sênior conversando naturalmente em um café, com diálogo humano, empático, direto e fluído. Não seja robótico.`;
+      ? `Esta é a primeira mensagem da conversa. Você pode iniciar com uma saudação breve e calorosa chamando o usuário pelo primeiro nome (${firstName}).`
+      : `ESTA CONVERSA JÁ ESTÁ EM ANDAMENTO. JAMAIS use saudações formais ("Olá", "Olá ${firstName}", "Bom dia", "Como posso ajudar?"). Vá direto ao ponto central do diálogo de forma humana, empática e fluida.`;
 
-    const systemInstruction = `Você é o Mentor Reflexivo Sover da plataforma MicroShift.
-Seu público-alvo são profissionais com mais de 35 anos que estão em transição de carreira ou buscando atualização para tecnologia e liderança ágil.
+    // A. Recuperação RAG (Base de Conhecimento)
+    let ragContext = "";
+    if (config.ragEnabled) {
+      try {
+        const knowledgeDocs = await fetchKnowledgeBase();
+        const relevantSnippets = findRelevantKnowledge(lastUserMsg, knowledgeDocs);
+        if (relevantSnippets) {
+          ragContext = `\n\n--- BASE DE CONHECIMENTO PROPRIETÁRIA (MICROSHIFT) ---\nUtilize as informações e conceitos abaixo como fundamento prioritário para a sua resposta quando pertinentes:\n${relevantSnippets}\n--- FIM DA BASE DE CONHECIMENTO ---\n`;
+        }
+      } catch (err) {
+        console.warn("Falha ao recuperar contexto RAG:", err);
+      }
+    }
 
-DIRETRIZ CRÍTICA DE TOM E DIÁLOGO:
+    // B. Conexões MCP (Model Context Protocol)
+    let mcpContext = "";
+    if (config.mcpEnabled) {
+      try {
+        const mcpServers = await fetchMcpServers();
+        const activeServers = mcpServers.filter((s) => s.status === "ACTIVE");
+        if (activeServers.length > 0) {
+          mcpContext = `\n\n--- RECURSOS DE CONEXÃO EXTERNA (MCP) ---\nServidores MCP ativos na plataforma: ${activeServers.map((s) => `${s.name} (${s.description || s.url})`).join(", ")}.\nVocê possui autoridade contextual estendida por essas ferramentas.`;
+        }
+      } catch (err) {
+        console.warn("Falha ao ler servidores MCP:", err);
+      }
+    }
+
+    // C. Instrução Completa do Sistema
+    const systemInstruction = `${config.systemPrompt}
+
+DIRETRIZ DE CONTINUIDADE DO DIÁLOGO:
 ${greetingDirective}
 
-Diretrizes:
-1. Jamais seja condescendente ou use clichês vazios.
-2. Ajude o profissional a ver sua bagagem prévia como diferencial competitivo (desenvolvimento humano, maturidade, visão sistêmica).
-3. Seja acolhedor, objetivo, empático e focado na filosofia "Calm Tech": pequenos passos diários sem ansiedade.
-4. Estimule reflexões ativas fazendo uma pergunta cirúrgica ao final.
-Contexto do aluno: Nome: ${userProfile?.displayName || "Profissional"}, Cargo/Foco: ${userProfile?.targetCareer || "Transição 35+"}.`;
+CONTEXTO DO ALUNO:
+- Nome: ${userProfile?.displayName || "Profissional"}
+- Carreira/Objetivo: ${userProfile?.targetCareer || "Transição 35+"}
+- Cargo Atual: ${userProfile?.currentRole || "Não especificado"}${ragContext}${mcpContext}`;
 
-    const formattedContents = messages.slice(-6).map((m) => ({
+    const formattedContents = messages.slice(-8).map((m) => ({
       role: m.role === "user" ? "user" : "model",
       parts: [{ text: m.content }],
     }));
 
-    const geminiReply = await callGeminiRest(apiKey, formattedContents, systemInstruction, false);
+    const geminiReply = await callGeminiRest(
+      apiKey,
+      formattedContents,
+      systemInstruction,
+      config.model || "gemini-2.0-flash",
+      config.temperature ?? 0.7,
+      false
+    );
+
     if (geminiReply && geminiReply.trim()) {
       return geminiReply.trim();
     }
   }
 
-  // Se não houver chave ou se a API retornar erro, aciona o Motor Cognitivo Reflexivo
+  // 3. Fallback se não houver chave ou caso ocorra indisponibilidade de rede
   return generateReflectiveMentorResponse(lastUserMsg, userProfile, isFirstExchange);
 }
 
@@ -258,7 +334,8 @@ export async function generateRoadmapSteps(
   careerTarget: string,
   currentLevel: string = "Profissional 35+ em Transição"
 ): Promise<{ title: string; category?: string; steps: { stepNumber: number; title: string; durationMinutes: number }[] }> {
-  const apiKey = getCustomGeminiApiKey();
+  const apiKey = await getEffectiveApiKey();
+  const config = await fetchMentorAiConfig();
 
   if (apiKey) {
     const prompt = `Você é um mentor sênior de carreira especialista em profissionais 35+ migrando para tecnologia ou liderança moderna.
@@ -278,6 +355,8 @@ Retorne EXCLUSIVAMENTE um JSON no seguinte formato:
       apiKey,
       [{ role: "user", parts: [{ text: prompt }] }],
       "Você é um gerador JSON estrito.",
+      config.model || "gemini-2.0-flash",
+      0.3,
       true
     );
 

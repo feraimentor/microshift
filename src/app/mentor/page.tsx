@@ -27,13 +27,17 @@ import {
   History,
   PanelLeftClose,
   PanelLeftOpen,
+  Bot,
+  Sliders,
 } from "lucide-react";
 import {
   chatWithReflectiveMentor,
   getCustomGeminiApiKey,
   setCustomGeminiApiKey,
   hasCustomGeminiApiKey,
+  getEffectiveApiKey,
 } from "@/lib/gemini";
+import { fetchMentorAiConfig } from "@/lib/mentor-config";
 import {
   getUserMentorSessions,
   createMentorSession,
@@ -70,8 +74,11 @@ export default function MentorPage() {
   const [loading, setLoading] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  // Estados do Modal da Chave Gemini
+  // Estados do Modal da Chave Gemini e Status do Agente
   const [hasApiKey, setHasApiKey] = useState(false);
+  const [hasEffectiveKey, setHasEffectiveKey] = useState(false);
+  const [activeModel, setActiveModel] = useState("gemini-2.0-flash");
+  const [isRagActive, setIsRagActive] = useState(true);
   const [isKeyModalOpen, setIsKeyModalOpen] = useState(false);
   const [apiKeyInput, setApiKeyInput] = useState("");
   const [keySavedFeedback, setKeySavedFeedback] = useState(false);
@@ -87,8 +94,18 @@ export default function MentorPage() {
     }
   }, [profile?.uid, profile?.displayName]);
 
-  // Carrega chave do Gemini se houver
+  // Carrega status da IA, modelo ativo e chaves
   useEffect(() => {
+    async function loadAgentStatus() {
+      try {
+        const config = await fetchMentorAiConfig();
+        setActiveModel(config.model || "gemini-2.0-flash");
+        setIsRagActive(config.ragEnabled);
+        const effKey = await getEffectiveApiKey();
+        setHasEffectiveKey(Boolean(effKey));
+      } catch {}
+    }
+    loadAgentStatus();
     setHasApiKey(hasCustomGeminiApiKey());
     setApiKeyInput(getCustomGeminiApiKey());
   }, []);
@@ -402,9 +419,30 @@ export default function MentorPage() {
           </div>
 
           <div className="flex items-center gap-2 shrink-0">
-            <span className="text-[10px] font-semibold uppercase px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-300 border border-amber-500/20 hidden sm:inline-block">
-              {hasApiKey ? "Gemini 1.5 Flash Ativo" : "Mentor Cognitivo 35+"}
-            </span>
+            {hasEffectiveKey ? (
+              <span className="text-[10px] font-semibold uppercase px-2.5 py-1 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 flex items-center gap-1.5 hidden sm:inline-flex">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                <span>{activeModel} {isRagActive ? "• RAG Ativo" : ""}</span>
+              </span>
+            ) : (
+              <span className="text-[10px] font-semibold uppercase px-2.5 py-1 rounded-full bg-amber-500/10 text-amber-300 border border-amber-500/20 flex items-center gap-1.5 hidden sm:inline-flex">
+                <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
+                <span>Modo Offline (Configure no Admin)</span>
+              </span>
+            )}
+
+            {profile?.role === "SUPER_ADMIN" && (
+              <Link href="/admin">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="text-xs border-calm-border hover:bg-calm-surface text-calm-accent gap-1.5 px-2.5 py-1"
+                >
+                  <Sliders className="w-3.5 h-3.5" />
+                  <span className="hidden md:inline">Treinar Agente & RAG</span>
+                </Button>
+              </Link>
+            )}
 
             <Button
               variant="ghost"

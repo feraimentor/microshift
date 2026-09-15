@@ -25,6 +25,21 @@ import {
   Video,
   Play,
   ExternalLink,
+  Bot,
+  FileText,
+  UploadCloud,
+  Network,
+  Sliders,
+  Key,
+  RefreshCw,
+  Trash2,
+  ToggleLeft,
+  ToggleRight,
+  Eye,
+  EyeOff,
+  MessageSquare,
+  Send,
+  Zap,
 } from "lucide-react";
 import {
   Coupon,
@@ -33,6 +48,10 @@ import {
   PlanStatus,
   UserProfile,
   MicrolearningLesson,
+  MentorAiConfig,
+  KnowledgeDocument,
+  McpServerConfig,
+  GeminiModelId,
 } from "@/types";
 import {
   createCoupon,
@@ -47,6 +66,22 @@ import {
   INITIAL_MICROLEARNING_LESSONS,
 } from "@/lib/microlearning";
 import { INITIAL_COUPONS } from "@/lib/mock-data";
+import {
+  fetchMentorAiConfig,
+  saveMentorAiConfig,
+  fetchKnowledgeBase,
+  addKnowledgeDocument,
+  deleteKnowledgeDocument,
+  toggleKnowledgeDocument,
+  fetchMcpServers,
+  saveMcpServer,
+  deleteMcpServer,
+  DEFAULT_SYSTEM_PROMPT,
+  DEFAULT_WELCOME_MESSAGE,
+  DEFAULT_MENTOR_CONFIG,
+} from "@/lib/mentor-config";
+import { testGeminiConnection, callGeminiRest } from "@/lib/gemini";
+import { parseKnowledgeFile } from "@/lib/file-parser";
 
 export default function AdminPage() {
   const router = useRouter();
@@ -59,7 +94,7 @@ export default function AdminPage() {
   }, [authLoading, profile, router]);
 
   // Estados de Abas
-  const [activeTab, setActiveTab] = useState<"COUPONS" | "USERS" | "LESSONS">("COUPONS");
+  const [activeTab, setActiveTab] = useState<"COUPONS" | "USERS" | "LESSONS" | "MENTOR_AI">("COUPONS");
 
   // Estados de Cupons
   const [coupons, setCoupons] = useState<Coupon[]>(INITIAL_COUPONS);
@@ -92,20 +127,68 @@ export default function AdminPage() {
   const [lessonError, setLessonError] = useState<string | null>(null);
   const [creatingLesson, setCreatingLesson] = useState(false);
 
+  // Estados do Agente IA, RAG e MCP
+  const [aiSubTab, setAiSubTab] = useState<"PROMPT" | "RAG" | "MCP">("PROMPT");
+  const [mentorConfig, setMentorConfig] = useState<MentorAiConfig>(DEFAULT_MENTOR_CONFIG);
+  const [savingAiConfig, setSavingAiConfig] = useState(false);
+  const [aiConfigFeedback, setAiConfigFeedback] = useState<string | null>(null);
+  const [showApiKey, setShowApiKey] = useState(false);
+
+  // Teste de Conexão
+  const [testingConnection, setTestingConnection] = useState(false);
+  const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
+
+  // Chat de Teste ao Vivo no Admin
+  const [testPrompt, setTestPrompt] = useState("");
+  const [testResponse, setTestResponse] = useState<string | null>(null);
+  const [testingChat, setTestingChat] = useState(false);
+
+  // Base de Conhecimento (RAG)
+  const [knowledgeDocs, setKnowledgeDocs] = useState<KnowledgeDocument[]>([]);
+  const [uploadingDoc, setUploadingDoc] = useState(false);
+  const [docFeedback, setDocFeedback] = useState<string | null>(null);
+  const [docError, setDocError] = useState<string | null>(null);
+  const [manualTitle, setManualTitle] = useState("");
+  const [manualContent, setManualContent] = useState("");
+  const [savingManualDoc, setSavingManualDoc] = useState(false);
+
+  // Servidores MCP
+  const [mcpServers, setMcpServers] = useState<McpServerConfig[]>([]);
+  const [newMcpName, setNewMcpName] = useState("");
+  const [newMcpUrl, setNewMcpUrl] = useState("");
+  const [newMcpTransport, setNewMcpTransport] = useState<"SSE" | "HTTP">("SSE");
+  const [newMcpToken, setNewMcpToken] = useState("");
+  const [newMcpDesc, setNewMcpDesc] = useState("");
+  const [savingMcp, setSavingMcp] = useState(false);
+  const [mcpFeedback, setMcpFeedback] = useState<string | null>(null);
+
   // Carregamento de dados
   const loadData = async () => {
     try {
       setLoadingCoupons(true);
       setLoadingUsers(true);
       setLoadingLessons(true);
-      const [loadedCoupons, loadedUsers, loadedLessons] = await Promise.all([
+      const [
+        loadedCoupons,
+        loadedUsers,
+        loadedLessons,
+        loadedConfig,
+        loadedDocs,
+        loadedMcp,
+      ] = await Promise.all([
         listAllCoupons(),
         listAllUsers(),
         fetchMicrolearningLessons(),
+        fetchMentorAiConfig(),
+        fetchKnowledgeBase(),
+        fetchMcpServers(),
       ]);
       setCoupons(loadedCoupons);
       setUsers(loadedUsers);
       setLessons(loadedLessons);
+      setMentorConfig(loadedConfig);
+      setKnowledgeDocs(loadedDocs);
+      setMcpServers(loadedMcp);
     } catch (err: any) {
       console.error("Erro ao carregar dados do admin:", err);
     } finally {
@@ -118,6 +201,229 @@ export default function AdminPage() {
   useEffect(() => {
     loadData();
   }, []);
+
+  // Handlers do Agente IA
+  const handleSaveMentorConfig = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      setSavingAiConfig(true);
+      setAiConfigFeedback(null);
+      await saveMentorAiConfig(mentorConfig, profile?.displayName || "Admin Master");
+      setAiConfigFeedback("Treinamento e configurações do Mentor salvos com sucesso!");
+      setTimeout(() => setAiConfigFeedback(null), 4000);
+    } catch (err: any) {
+      alert("Erro ao salvar configuração do Mentor: " + err.message);
+    } finally {
+      setSavingAiConfig(false);
+    }
+  };
+
+  const handleTestConnection = async () => {
+    if (!mentorConfig.apiKey.trim()) {
+      setTestResult({
+        success: false,
+        message: "Por favor, informe a Chave de API do Google AI Studio antes de testar.",
+      });
+      return;
+    }
+    try {
+      setTestingConnection(true);
+      setTestResult(null);
+      const res = await testGeminiConnection(mentorConfig.apiKey, mentorConfig.model);
+      setTestResult(res);
+    } catch (err: any) {
+      setTestResult({ success: false, message: "Erro ao testar: " + err.message });
+    } finally {
+      setTestingConnection(false);
+    }
+  };
+
+  const handleResetPrompt = () => {
+    if (confirm("Deseja restaurar as diretrizes comportamentais para o padrão recomendado da MicroShift?")) {
+      setMentorConfig({
+        ...mentorConfig,
+        systemPrompt: DEFAULT_SYSTEM_PROMPT,
+        welcomeMessage: DEFAULT_WELCOME_MESSAGE,
+        temperature: 0.7,
+      });
+      setAiConfigFeedback("Padrão comportamental restaurado. Lembre-se de clicar em Salvar.");
+      setTimeout(() => setAiConfigFeedback(null), 4000);
+    }
+  };
+
+  const handleSendTestChat = async () => {
+    if (!testPrompt.trim()) return;
+    if (!mentorConfig.apiKey.trim()) {
+      alert("Informe uma Chave de API no campo acima para testar o modelo em nuvem.");
+      return;
+    }
+
+    try {
+      setTestingChat(true);
+      setTestResponse(null);
+      const reply = await callGeminiRest(
+        mentorConfig.apiKey.trim(),
+        [{ role: "user", parts: [{ text: testPrompt.trim() }] }],
+        mentorConfig.systemPrompt,
+        mentorConfig.model,
+        mentorConfig.temperature
+      );
+      setTestResponse(reply || "Não houve resposta do modelo.");
+    } catch (err: any) {
+      setTestResponse("Erro no teste: " + err.message);
+    } finally {
+      setTestingChat(false);
+    }
+  };
+
+  // Handlers de Arquivos e Base de Conhecimento (RAG)
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+
+    try {
+      setUploadingDoc(true);
+      setDocError(null);
+      setDocFeedback(null);
+
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        const parsed = await parseKnowledgeFile(file);
+        const saved = await addKnowledgeDocument({
+          title: parsed.title,
+          fileName: parsed.fileName,
+          fileType: parsed.fileType,
+          content: parsed.content,
+          charCount: parsed.charCount,
+          isActive: true,
+        });
+        setKnowledgeDocs((prev) => [saved, ...prev]);
+      }
+
+      setDocFeedback(`${files.length} arquivo(s) incorporado(s) com sucesso à Base de Conhecimento!`);
+      setTimeout(() => setDocFeedback(null), 4000);
+    } catch (err: any) {
+      setDocError(err?.message || "Erro ao processar arquivo.");
+    } finally {
+      setUploadingDoc(false);
+      e.target.value = "";
+    }
+  };
+
+  const handleSaveManualDoc = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!manualTitle.trim() || !manualContent.trim()) return;
+
+    try {
+      setSavingManualDoc(true);
+      setDocError(null);
+      setDocFeedback(null);
+
+      const saved = await addKnowledgeDocument({
+        title: manualTitle.trim(),
+        fileType: "manual",
+        content: manualContent.trim(),
+        charCount: manualContent.trim().length,
+        isActive: true,
+      });
+
+      setKnowledgeDocs([saved, ...knowledgeDocs]);
+      setManualTitle("");
+      setManualContent("");
+      setDocFeedback(`Documento "${saved.title}" cadastrado com sucesso!`);
+      setTimeout(() => setDocFeedback(null), 4000);
+    } catch (err: any) {
+      setDocError(err?.message || "Erro ao salvar documento.");
+    } finally {
+      setSavingManualDoc(false);
+    }
+  };
+
+  const handleToggleDoc = async (id: string, currentActive: boolean) => {
+    try {
+      await toggleKnowledgeDocument(id, !currentActive);
+      setKnowledgeDocs(
+        knowledgeDocs.map((d) => (d.id === id ? { ...d, isActive: !currentActive } : d))
+      );
+    } catch (err: any) {
+      alert("Erro ao alterar status do documento: " + err.message);
+    }
+  };
+
+  const handleDeleteDoc = async (id: string, title: string) => {
+    if (!confirm(`Deseja remover "${title}" da Base de Conhecimento?`)) return;
+    try {
+      await deleteKnowledgeDocument(id);
+      setKnowledgeDocs(knowledgeDocs.filter((d) => d.id !== id));
+      setDocFeedback("Documento removido da Base de Conhecimento.");
+      setTimeout(() => setDocFeedback(null), 3000);
+    } catch (err: any) {
+      alert("Erro ao excluir documento: " + err.message);
+    }
+  };
+
+  // Handlers de Conectores MCP
+  const handleAddMcpServer = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newMcpName.trim() || !newMcpUrl.trim()) return;
+
+    try {
+      setSavingMcp(true);
+      setMcpFeedback(null);
+      const saved = await saveMcpServer({
+        name: newMcpName.trim(),
+        url: newMcpUrl.trim(),
+        transport: newMcpTransport,
+        authToken: newMcpToken.trim() || undefined,
+        description: newMcpDesc.trim() || undefined,
+        status: "ACTIVE",
+      });
+
+      setMcpServers([saved, ...mcpServers.filter((s) => s.id !== saved.id)]);
+      setNewMcpName("");
+      setNewMcpUrl("");
+      setNewMcpToken("");
+      setNewMcpDesc("");
+      setMcpFeedback(`Conector MCP "${saved.name}" salvo com sucesso!`);
+      setTimeout(() => setMcpFeedback(null), 4000);
+    } catch (err: any) {
+      alert("Erro ao salvar servidor MCP: " + err.message);
+    } finally {
+      setSavingMcp(false);
+    }
+  };
+
+  const handleDeleteMcp = async (id: string, name: string) => {
+    if (!confirm(`Deseja remover o servidor MCP "${name}"?`)) return;
+    try {
+      await deleteMcpServer(id);
+      setMcpServers(mcpServers.filter((s) => s.id !== id));
+      setMcpFeedback("Servidor MCP removido.");
+      setTimeout(() => setMcpFeedback(null), 3000);
+    } catch (err: any) {
+      alert("Erro ao remover MCP: " + err.message);
+    }
+  };
+
+  const handleToggleMcp = async (server: McpServerConfig) => {
+    const newStatus = server.status === "ACTIVE" ? "INACTIVE" : "ACTIVE";
+    try {
+      const updated = await saveMcpServer(
+        {
+          name: server.name,
+          url: server.url,
+          transport: server.transport,
+          authToken: server.authToken,
+          description: server.description,
+          status: newStatus,
+        },
+        server.id
+      );
+      setMcpServers(mcpServers.map((s) => (s.id === server.id ? updated : s)));
+    } catch (err: any) {
+      alert("Erro ao alternar status do MCP: " + err.message);
+    }
+  };
 
   // Criação Unitária de Cupom
   const handleCreateSingleCoupon = async (e: React.FormEvent) => {
@@ -286,6 +592,12 @@ export default function AdminPage() {
               Aulas
             </span>
           </div>
+          <div className="px-3 py-1.5 rounded-xl bg-calm-card border border-calm-border text-center shrink-0">
+            <span className="text-base font-bold text-emerald-400">{knowledgeDocs.filter(d => d.isActive).length}</span>
+            <span className="text-[10px] text-calm-muted block uppercase tracking-wider">
+              Docs RAG
+            </span>
+          </div>
         </div>
       </div>
 
@@ -325,6 +637,18 @@ export default function AdminPage() {
         >
           <Video className="w-4 h-4 text-sky-400" />
           <span>Gestor de Microlearning ({lessons.length})</span>
+        </button>
+
+        <button
+          onClick={() => setActiveTab("MENTOR_AI")}
+          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold transition shrink-0 ${
+            activeTab === "MENTOR_AI"
+              ? "bg-calm-card text-calm-accent border border-calm-border shadow-sm"
+              : "text-calm-muted hover:text-calm-text hover:bg-calm-card/40"
+          }`}
+        >
+          <Bot className="w-4 h-4 text-emerald-400" />
+          <span>Agente IA & Conhecimento</span>
         </button>
       </div>
 
@@ -865,6 +1189,676 @@ export default function AdminPage() {
               </div>
             </Card>
           </div>
+        </div>
+      )}
+
+      {/* ABA 4: AGENTE IA, BASE DE CONHECIMENTO (RAG) & CONECTORES MCP */}
+      {activeTab === "MENTOR_AI" && (
+        <div className="space-y-6">
+          {/* Sub-navegação da IA */}
+          <div className="flex items-center justify-between flex-wrap gap-3 pb-2 border-b border-calm-border/60">
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setAiSubTab("PROMPT")}
+                className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-semibold transition ${
+                  aiSubTab === "PROMPT"
+                    ? "bg-calm-accent/20 text-calm-accent border border-calm-accent/30"
+                    : "text-calm-muted hover:text-calm-text"
+                }`}
+              >
+                <Sliders className="w-3.5 h-3.5" />
+                <span>Treinamento & Modelo</span>
+              </button>
+
+              <button
+                onClick={() => setAiSubTab("RAG")}
+                className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-semibold transition ${
+                  aiSubTab === "RAG"
+                    ? "bg-calm-accent/20 text-calm-accent border border-calm-accent/30"
+                    : "text-calm-muted hover:text-calm-text"
+                }`}
+              >
+                <FileText className="w-3.5 h-3.5" />
+                <span>Base de Conhecimento (RAG) ({knowledgeDocs.length})</span>
+              </button>
+
+              <button
+                onClick={() => setAiSubTab("MCP")}
+                className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-semibold transition ${
+                  aiSubTab === "MCP"
+                    ? "bg-calm-accent/20 text-calm-accent border border-calm-accent/30"
+                    : "text-calm-muted hover:text-calm-text"
+                }`}
+              >
+                <Network className="w-3.5 h-3.5" />
+                <span>Conectores MCP ({mcpServers.length})</span>
+              </button>
+            </div>
+
+            {aiConfigFeedback && (
+              <div className="flex items-center gap-1.5 text-xs text-emerald-400 bg-emerald-500/10 px-3 py-1.5 rounded-md border border-emerald-500/20">
+                <CheckCircle2 className="w-3.5 h-3.5" />
+                <span>{aiConfigFeedback}</span>
+              </div>
+            )}
+          </div>
+
+          {/* SUB-ABA 1: TREINAMENTO & MODELO */}
+          {aiSubTab === "PROMPT" && (
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+              <div className="lg:col-span-2 space-y-6">
+                <Card className="p-6 border-calm-border space-y-5">
+                  <div className="flex items-center justify-between border-b border-calm-border/60 pb-4">
+                    <div>
+                      <h3 className="text-base font-bold text-calm-text flex items-center gap-2">
+                        <Bot className="w-5 h-5 text-calm-accent" />
+                        Treinamento Comportamental do Agente (System Prompt)
+                      </h3>
+                      <p className="text-xs text-calm-muted mt-1">
+                        Defina a personalidade, tom de voz, regras de escuta ativa e metodologia socrática do Mentor Sover.
+                      </p>
+                    </div>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={handleResetPrompt}
+                      className="text-xs border-calm-border text-calm-muted hover:text-calm-text"
+                    >
+                      <RefreshCw className="w-3.5 h-3.5 mr-1.5" />
+                      Restaurar Padrão
+                    </Button>
+                  </div>
+
+                  <form onSubmit={handleSaveMentorConfig} className="space-y-4">
+                    <div>
+                      <label className="text-xs font-semibold text-calm-muted block mb-1.5">
+                        Instruções do Sistema (System Prompt):
+                      </label>
+                      <textarea
+                        value={mentorConfig.systemPrompt}
+                        onChange={(e) =>
+                          setMentorConfig({ ...mentorConfig, systemPrompt: e.target.value })
+                        }
+                        rows={14}
+                        className="w-full bg-calm-card/80 border border-calm-border rounded-xl p-3.5 text-xs text-calm-text font-mono focus:outline-none focus:border-calm-accent focus:ring-1 focus:ring-calm-accent/40 resize-y leading-relaxed"
+                        placeholder="Escreva as diretrizes comportamentais do Mentor Sover..."
+                      />
+                    </div>
+
+                    <div>
+                      <label className="text-xs font-semibold text-calm-muted block mb-1.5">
+                        Mensagem Inicial de Boas-Vindas (Nova Sessão):
+                      </label>
+                      <textarea
+                        value={mentorConfig.welcomeMessage}
+                        onChange={(e) =>
+                          setMentorConfig({ ...mentorConfig, welcomeMessage: e.target.value })
+                        }
+                        rows={2}
+                        className="w-full bg-calm-card/80 border border-calm-border rounded-xl p-3 text-xs text-calm-text focus:outline-none focus:border-calm-accent"
+                        placeholder="Mensagem exibida ao abrir uma nova conversa..."
+                      />
+                    </div>
+
+                    <div className="flex items-center justify-end pt-2">
+                      <Button
+                        type="submit"
+                        disabled={savingAiConfig}
+                        className="bg-calm-accent text-calm-bg hover:bg-calm-accent/90 font-semibold px-6 text-xs h-9"
+                      >
+                        {savingAiConfig ? "Salvando..." : "Salvar Treinamento & Configurações"}
+                      </Button>
+                    </div>
+                  </form>
+                </Card>
+
+                {/* Simulador de Teste ao Vivo */}
+                <Card className="p-6 border-calm-border space-y-4">
+                  <div className="border-b border-calm-border/60 pb-3">
+                    <h4 className="text-sm font-bold text-calm-text flex items-center gap-2">
+                      <MessageSquare className="w-4 h-4 text-calm-accent" />
+                      Simulador de Diálogo ao Vivo (Testar Persona)
+                    </h4>
+                    <p className="text-xs text-calm-muted mt-0.5">
+                      Envie uma mensagem de teste para verificar em tempo real como o modelo responde com as diretrizes salvas.
+                    </p>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="text"
+                      value={testPrompt}
+                      onChange={(e) => setTestPrompt(e.target.value)}
+                      onKeyDown={(e) => e.key === "Enter" && handleSendTestChat()}
+                      placeholder="Ex: Tenho 43 anos e receio de não acompanhar o ritmo da IA..."
+                      className="flex-1 bg-calm-card/80 border border-calm-border rounded-xl px-3.5 py-2 text-xs text-calm-text focus:outline-none focus:border-calm-accent"
+                    />
+                    <Button
+                      type="button"
+                      onClick={handleSendTestChat}
+                      disabled={testingChat || !testPrompt.trim()}
+                      className="bg-calm-card border border-calm-border hover:bg-calm-accent hover:text-calm-bg text-calm-text text-xs shrink-0"
+                    >
+                      {testingChat ? (
+                        <RefreshCw className="w-3.5 h-3.5 animate-spin mr-1.5" />
+                      ) : (
+                        <Send className="w-3.5 h-3.5 mr-1.5" />
+                      )}
+                      {testingChat ? "Consultando..." : "Testar Resposta"}
+                    </Button>
+                  </div>
+
+                  {testResponse && (
+                    <div className="p-4 rounded-xl bg-calm-surface/60 border border-calm-border text-xs text-calm-text whitespace-pre-wrap leading-relaxed">
+                      <div className="text-[10px] text-calm-muted uppercase tracking-wider mb-2 font-mono flex items-center gap-1">
+                        <Bot className="w-3 h-3 text-calm-accent" />
+                        Resposta Simulada do {mentorConfig.model}:
+                      </div>
+                      {testResponse}
+                    </div>
+                  )}
+                </Card>
+              </div>
+
+              {/* Coluna Lateral: Modelo, Chave Master e Parâmetros */}
+              <div className="space-y-6">
+                <Card className="p-5 border-calm-border space-y-4">
+                  <h4 className="text-sm font-bold text-calm-text flex items-center gap-2">
+                    <Key className="w-4 h-4 text-amber-400" />
+                    Chave Master da Plataforma (Google AI Studio)
+                  </h4>
+                  <p className="text-xs text-calm-muted leading-relaxed">
+                    Esta chave é aplicada globalmente para <strong>todos os alunos</strong> da plataforma. Gere gratuitamente em{" "}
+                    <a
+                      href="https://aistudio.google.com/apikey"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-calm-accent underline"
+                    >
+                      aistudio.google.com/apikey
+                    </a>.
+                  </p>
+
+                  <div className="space-y-2">
+                    <div className="relative">
+                      <input
+                        type={showApiKey ? "text" : "password"}
+                        value={mentorConfig.apiKey}
+                        onChange={(e) =>
+                          setMentorConfig({ ...mentorConfig, apiKey: e.target.value })
+                        }
+                        placeholder="AIzaSy..."
+                        className="w-full bg-calm-card/80 border border-calm-border rounded-xl px-3.5 py-2 text-xs font-mono text-calm-text pr-10 focus:outline-none focus:border-calm-accent"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowApiKey(!showApiKey)}
+                        className="absolute right-3 top-2.5 text-calm-muted hover:text-calm-text"
+                      >
+                        {showApiKey ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                      </button>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <Button
+                        type="button"
+                        onClick={handleTestConnection}
+                        disabled={testingConnection}
+                        variant="outline"
+                        className="w-full text-xs border-calm-border hover:bg-calm-surface"
+                      >
+                        {testingConnection ? (
+                          <RefreshCw className="w-3.5 h-3.5 animate-spin mr-1.5" />
+                        ) : (
+                          <Zap className="w-3.5 h-3.5 mr-1.5 text-amber-400" />
+                        )}
+                        {testingConnection ? "Testando..." : "Testar Conexão"}
+                      </Button>
+                    </div>
+
+                    {testResult && (
+                      <div
+                        className={`p-3 rounded-xl text-xs border ${
+                          testResult.success
+                            ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-400"
+                            : "bg-rose-500/10 border-rose-500/30 text-rose-300"
+                        }`}
+                      >
+                        {testResult.message}
+                      </div>
+                    )}
+                  </div>
+                </Card>
+
+                {/* Seletor de Modelo */}
+                <Card className="p-5 border-calm-border space-y-4">
+                  <h4 className="text-sm font-bold text-calm-text flex items-center gap-2">
+                    <Zap className="w-4 h-4 text-calm-accent" />
+                    Modelo de Inteligência Artificial
+                  </h4>
+
+                  <div className="space-y-2">
+                    {[
+                      {
+                        id: "gemini-2.0-flash",
+                        name: "Gemini 2.0 Flash",
+                        badge: "Recomendado",
+                        desc: "Mais recente, ultra-rápido, fluência humana superior em PT-BR.",
+                      },
+                      {
+                        id: "gemini-1.5-pro",
+                        name: "Gemini 1.5 Pro",
+                        badge: "Executivo",
+                        desc: "Raciocínio complexo e analítico para mentoria de alta senioridade.",
+                      },
+                      {
+                        id: "gemini-1.5-flash",
+                        name: "Gemini 1.5 Flash",
+                        badge: "Econômico",
+                        desc: "Alta velocidade para diálogos pontuais.",
+                      },
+                    ].map((m) => (
+                      <div
+                        key={m.id}
+                        onClick={() =>
+                          setMentorConfig({ ...mentorConfig, model: m.id as GeminiModelId })
+                        }
+                        className={`p-3 rounded-xl border cursor-pointer transition ${
+                          mentorConfig.model === m.id
+                            ? "bg-calm-accent/10 border-calm-accent text-calm-text"
+                            : "bg-calm-card/40 border-calm-border text-calm-muted hover:border-calm-border/80"
+                        }`}
+                      >
+                        <div className="flex items-center justify-between">
+                          <span className="font-semibold text-xs text-calm-text">{m.name}</span>
+                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-calm-card border border-calm-border text-calm-accent font-medium">
+                            {m.badge}
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-calm-muted mt-1">{m.desc}</p>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Slider de Temperatura */}
+                  <div className="pt-2 border-t border-calm-border/60 space-y-2">
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="text-calm-muted">Temperatura (Criatividade):</span>
+                      <span className="font-mono text-calm-accent font-bold">
+                        {mentorConfig.temperature}
+                      </span>
+                    </div>
+                    <input
+                      type="range"
+                      min="0.1"
+                      max="1.0"
+                      step="0.1"
+                      value={mentorConfig.temperature}
+                      onChange={(e) =>
+                        setMentorConfig({ ...mentorConfig, temperature: parseFloat(e.target.value) })
+                      }
+                      className="w-full accent-emerald-400 cursor-pointer"
+                    />
+                    <div className="flex justify-between text-[10px] text-calm-muted">
+                      <span>0.1 (Foco & Precisão)</span>
+                      <span>0.7 (Empático)</span>
+                      <span>1.0 (Criativo)</span>
+                    </div>
+                  </div>
+
+                  {/* Toggles de RAG e MCP */}
+                  <div className="pt-2 border-t border-calm-border/60 space-y-3">
+                    <label className="flex items-center justify-between cursor-pointer">
+                      <span className="text-xs text-calm-text">Habilitar Base RAG nas respostas:</span>
+                      <input
+                        type="checkbox"
+                        checked={mentorConfig.ragEnabled}
+                        onChange={(e) =>
+                          setMentorConfig({ ...mentorConfig, ragEnabled: e.target.checked })
+                        }
+                        className="rounded accent-emerald-400"
+                      />
+                    </label>
+
+                    <label className="flex items-center justify-between cursor-pointer">
+                      <span className="text-xs text-calm-text">Habilitar Servidores MCP:</span>
+                      <input
+                        type="checkbox"
+                        checked={mentorConfig.mcpEnabled}
+                        onChange={(e) =>
+                          setMentorConfig({ ...mentorConfig, mcpEnabled: e.target.checked })
+                        }
+                        className="rounded accent-emerald-400"
+                      />
+                    </label>
+                  </div>
+                </Card>
+              </div>
+            </div>
+          )}
+
+          {/* SUB-ABA 2: BASE DE CONHECIMENTO (RAG) */}
+          {aiSubTab === "RAG" && (
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+              {/* Formulários de Inclusão de Conhecimento */}
+              <div className="space-y-6">
+                <Card className="p-6 border-calm-border space-y-4">
+                  <h4 className="text-sm font-bold text-calm-text flex items-center gap-2">
+                    <UploadCloud className="w-4 h-4 text-calm-accent" />
+                    Subir Arquivos de Conhecimento
+                  </h4>
+                  <p className="text-xs text-calm-muted leading-relaxed">
+                    Faça upload de materiais proprietários da MicroShift (textos, cartilhas, apostilas, e-books em <code>.txt</code>, <code>.md</code>, <code>.json</code>, <code>.csv</code>).
+                  </p>
+
+                  <label className="border-2 border-dashed border-calm-border hover:border-calm-accent/60 rounded-xl p-6 flex flex-col items-center justify-center cursor-pointer transition bg-calm-card/40 text-center">
+                    <UploadCloud className="w-8 h-8 text-calm-accent mb-2" />
+                    <span className="text-xs font-semibold text-calm-text">
+                      {uploadingDoc ? "Processando arquivos..." : "Clique ou arraste arquivos aqui"}
+                    </span>
+                    <span className="text-[10px] text-calm-muted mt-1">
+                      Suporta .txt, .md, .json, .csv (até 5MB)
+                    </span>
+                    <input
+                      type="file"
+                      multiple
+                      accept=".txt,.md,.markdown,.json,.csv"
+                      onChange={handleFileUpload}
+                      disabled={uploadingDoc}
+                      className="hidden"
+                    />
+                  </label>
+
+                  {docFeedback && (
+                    <div className="text-xs text-emerald-400 bg-emerald-500/10 p-3 rounded-lg border border-emerald-500/20">
+                      {docFeedback}
+                    </div>
+                  )}
+
+                  {docError && (
+                    <div className="text-xs text-rose-300 bg-rose-500/10 p-3 rounded-lg border border-rose-500/20">
+                      {docError}
+                    </div>
+                  )}
+                </Card>
+
+                {/* Inserção Manual de Texto / Nota */}
+                <Card className="p-6 border-calm-border space-y-4">
+                  <h4 className="text-sm font-bold text-calm-text flex items-center gap-2">
+                    <FileText className="w-4 h-4 text-calm-accent" />
+                    Adicionar Nota / Diretriz Manual
+                  </h4>
+
+                  <form onSubmit={handleSaveManualDoc} className="space-y-3">
+                    <div>
+                      <input
+                        type="text"
+                        value={manualTitle}
+                        onChange={(e) => setManualTitle(e.target.value)}
+                        placeholder="Título do Documento ou Metodologia"
+                        className="w-full bg-calm-card/80 border border-calm-border rounded-xl px-3 py-2 text-xs text-calm-text focus:outline-none focus:border-calm-accent"
+                        required
+                      />
+                    </div>
+                    <div>
+                      <textarea
+                        value={manualContent}
+                        onChange={(e) => setManualContent(e.target.value)}
+                        rows={6}
+                        placeholder="Cole o conteúdo, regras ou conceitos que o mentor deve dominar..."
+                        className="w-full bg-calm-card/80 border border-calm-border rounded-xl p-3 text-xs text-calm-text focus:outline-none focus:border-calm-accent resize-y"
+                        required
+                      />
+                    </div>
+                    <Button
+                      type="submit"
+                      disabled={savingManualDoc}
+                      className="w-full bg-calm-accent text-calm-bg hover:bg-calm-accent/90 text-xs font-semibold"
+                    >
+                      {savingManualDoc ? "Cadastrando..." : "Cadastrar na Base"}
+                    </Button>
+                  </form>
+                </Card>
+              </div>
+
+              {/* Tabela de Documentos Cadastrados */}
+              <div className="lg:col-span-2">
+                <Card className="p-6 border-calm-border space-y-4">
+                  <div className="flex items-center justify-between border-b border-calm-border/60 pb-3">
+                    <div>
+                      <h4 className="text-sm font-bold text-calm-text flex items-center gap-2">
+                        <FileText className="w-4 h-4 text-calm-accent" />
+                        Documentos Ativos na Base ({knowledgeDocs.length})
+                      </h4>
+                      <p className="text-xs text-calm-muted mt-0.5">
+                        O Mentor Sover busca dinamicamente trechos desses documentos para fundamentar respostas técnicas e de metodologia.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="overflow-x-auto max-h-[580px] overflow-y-auto">
+                    <table className="w-full text-left text-xs">
+                      <thead className="sticky top-0 bg-calm-card z-10">
+                        <tr className="border-b border-calm-border text-calm-muted uppercase tracking-wider">
+                          <th className="py-2.5 px-3">Título / Arquivo</th>
+                          <th className="py-2.5 px-3">Tipo</th>
+                          <th className="py-2.5 px-3">Tamanho</th>
+                          <th className="py-2.5 px-3">Status RAG</th>
+                          <th className="py-2.5 px-3 text-right">Ações</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-calm-border/60">
+                        {knowledgeDocs.map((doc) => (
+                          <tr key={doc.id} className="hover:bg-calm-cardHover/40 transition">
+                            <td className="py-2.5 px-3">
+                              <span className="font-medium text-calm-text block">{doc.title}</span>
+                              {doc.fileName && (
+                                <span className="text-[10px] text-calm-muted font-mono">{doc.fileName}</span>
+                              )}
+                            </td>
+                            <td className="py-2.5 px-3">
+                              <span className="px-2 py-0.5 rounded text-[10px] uppercase font-mono bg-calm-card border border-calm-border text-calm-accent">
+                                {doc.fileType}
+                              </span>
+                            </td>
+                            <td className="py-2.5 px-3 text-calm-muted font-mono">
+                              {doc.charCount.toLocaleString()} caracteres
+                            </td>
+                            <td className="py-2.5 px-3">
+                              <button
+                                onClick={() => handleToggleDoc(doc.id, doc.isActive)}
+                                className={`flex items-center gap-1.5 px-2 py-1 rounded-md text-[10px] font-semibold transition ${
+                                  doc.isActive
+                                    ? "bg-emerald-500/15 text-emerald-400 border border-emerald-500/30"
+                                    : "bg-slate-700/30 text-slate-400 border border-slate-700"
+                                }`}
+                              >
+                                {doc.isActive ? (
+                                  <>
+                                    <CheckCircle2 className="w-3 h-3" /> Ativo
+                                  </>
+                                ) : (
+                                  <>
+                                    <AlertCircle className="w-3 h-3" /> Pausado
+                                  </>
+                                )}
+                              </button>
+                            </td>
+                            <td className="py-2.5 px-3 text-right">
+                              <button
+                                onClick={() => handleDeleteDoc(doc.id, doc.title)}
+                                className="p-1.5 rounded-md hover:bg-rose-500/20 text-calm-muted hover:text-rose-400 transition"
+                                title="Excluir da Base"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </Card>
+              </div>
+            </div>
+          )}
+
+          {/* SUB-ABA 3: CONECTORES MCP (MODEL CONTEXT PROTOCOL) */}
+          {aiSubTab === "MCP" && (
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+              {/* Formulário de Cadastro MCP */}
+              <Card className="p-6 border-calm-border space-y-4">
+                <div className="border-b border-calm-border/60 pb-3">
+                  <h4 className="text-sm font-bold text-calm-text flex items-center gap-2">
+                    <Network className="w-4 h-4 text-calm-accent" />
+                    Conectar Servidor MCP
+                  </h4>
+                  <p className="text-xs text-calm-muted mt-0.5">
+                    Integre o Mentor Sover a fontes externas, APIs corporativas e ferramentas via padrão Model Context Protocol.
+                  </p>
+                </div>
+
+                <form onSubmit={handleAddMcpServer} className="space-y-3">
+                  <div>
+                    <label className="text-[11px] text-calm-muted block mb-1">Nome do Servidor:</label>
+                    <input
+                      type="text"
+                      value={newMcpName}
+                      onChange={(e) => setNewMcpName(e.target.value)}
+                      placeholder="Ex: Servidor de Mercado Tech & Vagas"
+                      className="w-full bg-calm-card/80 border border-calm-border rounded-xl px-3 py-2 text-xs text-calm-text focus:outline-none focus:border-calm-accent"
+                      required
+                    />
+                  </div>
+
+                  <div>
+                    <label className="text-[11px] text-calm-muted block mb-1">URL do Endpoint MCP:</label>
+                    <input
+                      type="url"
+                      value={newMcpUrl}
+                      onChange={(e) => setNewMcpUrl(e.target.value)}
+                      placeholder="https://mcp.seudominio.com/sse"
+                      className="w-full bg-calm-card/80 border border-calm-border rounded-xl px-3 py-2 text-xs font-mono text-calm-text focus:outline-none focus:border-calm-accent"
+                      required
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="text-[11px] text-calm-muted block mb-1">Transporte:</label>
+                      <select
+                        value={newMcpTransport}
+                        onChange={(e) => setNewMcpTransport(e.target.value as "SSE" | "HTTP")}
+                        className="w-full bg-calm-card/80 border border-calm-border rounded-xl px-2.5 py-2 text-xs text-calm-text focus:outline-none focus:border-calm-accent"
+                      >
+                        <option value="SSE">SSE (Server-Sent)</option>
+                        <option value="HTTP">HTTP (Streamable)</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="text-[11px] text-calm-muted block mb-1">Bearer Token (Opcional):</label>
+                      <input
+                        type="password"
+                        value={newMcpToken}
+                        onChange={(e) => setNewMcpToken(e.target.value)}
+                        placeholder="Token secreto"
+                        className="w-full bg-calm-card/80 border border-calm-border rounded-xl px-3 py-2 text-xs font-mono text-calm-text focus:outline-none focus:border-calm-accent"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="text-[11px] text-calm-muted block mb-1">Descrição das Capacidades:</label>
+                    <textarea
+                      value={newMcpDesc}
+                      onChange={(e) => setNewMcpDesc(e.target.value)}
+                      rows={2}
+                      placeholder="Quais ferramentas e consultas esse MCP provê ao mentor..."
+                      className="w-full bg-calm-card/80 border border-calm-border rounded-xl p-2.5 text-xs text-calm-text focus:outline-none focus:border-calm-accent"
+                    />
+                  </div>
+
+                  {mcpFeedback && (
+                    <div className="text-xs text-emerald-400 bg-emerald-500/10 p-2.5 rounded-lg border border-emerald-500/20">
+                      {mcpFeedback}
+                    </div>
+                  )}
+
+                  <Button
+                    type="submit"
+                    disabled={savingMcp}
+                    className="w-full bg-calm-accent text-calm-bg hover:bg-calm-accent/90 text-xs font-semibold"
+                  >
+                    {savingMcp ? "Cadastrando..." : "Registrar Conector MCP"}
+                  </Button>
+                </form>
+              </Card>
+
+              {/* Lista de Servidores MCP Registrados */}
+              <div className="lg:col-span-2">
+                <Card className="p-6 border-calm-border space-y-4">
+                  <div className="border-b border-calm-border/60 pb-3">
+                    <h4 className="text-sm font-bold text-calm-text flex items-center gap-2">
+                      <Network className="w-4 h-4 text-calm-accent" />
+                      Servidores MCP Configurados ({mcpServers.length})
+                    </h4>
+                    <p className="text-xs text-calm-muted mt-0.5">
+                      Quando ativados, o Mentor pode acionar os recursos desses servidores para enriquecer o contexto de carreira.
+                    </p>
+                  </div>
+
+                  {mcpServers.length === 0 ? (
+                    <div className="p-8 text-center text-xs text-calm-muted">
+                      Nenhum servidor MCP registrado. Adicione um conector ao lado para integrar dados externos.
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      {mcpServers.map((server) => (
+                        <div
+                          key={server.id}
+                          className="p-4 rounded-xl bg-calm-card/50 border border-calm-border flex items-start justify-between gap-4"
+                        >
+                          <div className="space-y-1">
+                            <div className="flex items-center gap-2">
+                              <span className="font-semibold text-xs text-calm-text">{server.name}</span>
+                              <span className="px-1.5 py-0.5 rounded text-[10px] uppercase font-mono bg-calm-card border border-calm-border text-calm-accent">
+                                {server.transport}
+                              </span>
+                            </div>
+                            <div className="text-[11px] font-mono text-calm-muted break-all">{server.url}</div>
+                            {server.description && (
+                              <p className="text-xs text-calm-muted">{server.description}</p>
+                            )}
+                          </div>
+
+                          <div className="flex items-center gap-2 shrink-0">
+                            <button
+                              onClick={() => handleToggleMcp(server)}
+                              className={`px-2.5 py-1 rounded text-xs font-semibold transition ${
+                                server.status === "ACTIVE"
+                                  ? "bg-emerald-500/20 text-emerald-400 border border-emerald-500/30"
+                                  : "bg-slate-700/30 text-slate-400 border border-slate-700"
+                              }`}
+                            >
+                              {server.status === "ACTIVE" ? "Ativo" : "Pausado"}
+                            </button>
+                            <button
+                              onClick={() => handleDeleteMcp(server.id, server.name)}
+                              className="p-1.5 rounded-md hover:bg-rose-500/20 text-calm-muted hover:text-rose-400 transition"
+                              title="Remover MCP"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </Card>
+              </div>
+            </div>
+          )}
         </div>
       )}
     </div>

@@ -115,3 +115,41 @@ export interface MentorChatSession {
   updatedAt: string;
 }
 
+export type GeminiModelId = "gemini-2.0-flash" | "gemini-1.5-pro" | "gemini-1.5-flash";
+
+export interface MentorAiConfig {
+  apiKey: string;
+  model: GeminiModelId;
+  temperature: number;
+  systemPrompt: string;
+  welcomeMessage: string;
+  ragEnabled: boolean;
+  mcpEnabled: boolean;
+  updatedAt?: string;
+  updatedBy?: string;
+}
+
+export interface KnowledgeDocument {
+  id: string;
+  title: string;
+  fileName?: string;
+  fileType: "text" | "markdown" | "json" | "csv" | "pdf" | "manual";
+  content: string;
+  summary?: string;
+  charCount: number;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt?: string;
+}
+
+export interface McpServerConfig {
+  id: string;
+  name: string;
+  url: string;
+  transport: "SSE" | "HTTP";
+  authToken?: string;
+  status: "ACTIVE" | "INACTIVE";
+  description?: string;
+  createdAt: string;
+}
+
